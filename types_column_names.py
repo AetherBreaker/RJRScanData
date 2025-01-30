@@ -1,0 +1,274 @@
+if __name__ == "__main__":
+  from logging_config import configure_logging
+
+  configure_logging()
+
+from enum import StrEnum, auto
+from logging import getLogger
+
+logger = getLogger(__name__)
+
+
+class ColNameEnum(StrEnum):
+  __exclude__ = []
+  __init_exclude__ = []
+
+  @classmethod
+  def ordered_column_names(cls, *columns: list[str]) -> list[str]:
+    columns = [str(column) for column in columns]
+    return [str(column) for column in cls if str(column) in columns]
+
+  @classmethod
+  def all_columns(cls) -> list[str]:
+    return [
+      str(column)
+      for column in cls
+      if str(column) not in cls.__exclude__ and not str(column).startswith("_")
+    ]
+
+  @classmethod
+  def init_columns(cls) -> list[str]:
+    return [
+      str(column)
+      for column in cls
+      if str(column) not in cls.__init_exclude__ and not str(column).startswith("_")
+    ]
+
+  @classmethod
+  def testing_columns(cls) -> list[str]:
+    return [str(column) for column in cls if str(column) not in cls.__exclude__]
+
+  @classmethod
+  def true_all_columns(cls) -> list[str]:
+    return [str(column) for column in cls]
+
+  def _generate_next_value_(name, start, count, last_values):
+    """
+    Return the member name.
+    """
+    return name
+
+
+class RJRScanHeaders(ColNameEnum):
+  outlet_name = auto()
+  outlet_number = auto()
+  address_1 = auto()
+  address_2 = auto()
+  city = auto()
+  state = auto()
+  zip = auto()
+  transaction_date = auto()
+  market_basket_id = auto()
+  scan_id = auto()
+  register_id = auto()
+  quantity = auto()
+  price = auto()
+  upc_code = auto()
+  upc_description = auto()
+  unit_of_measure = auto()
+  promotion_flag = auto()
+  outlet_multipack_flag = auto()
+  outlet_multipack_quantity = auto()
+  outlet_multipack_discount_amt = auto()
+  acct_promo_name = auto()
+  acct_discount_amt = auto()
+  manufacturer_discount_amt = auto()
+  pid_coupon = auto()
+  pid_coupon_discount_amt = auto()
+  manufacturer_multipack_flag = auto()
+  manufacturer_multipack_quantity = auto()
+  manufacturer_multipack_discount_amt = auto()
+  manufacturer_promo_desc = auto()
+  manufacturer_buydown_desc = auto()
+  manufacturer_buydown_amt = auto()
+  manufacturer_multipack_desc = auto()
+  account_loyalty_id_number = auto()
+  coupon_desc = auto()
+
+
+class PMUSAScanHeaders(ColNameEnum):
+  AcountNumber = auto()
+  WeekEndDate = auto()
+  TransactionDate = auto()
+  TransactionTime = auto()
+  TransactionID = auto()
+  StoreNumber = auto()
+  StoreName = auto()
+  StoreAddress = auto()
+  StoreCity = auto()
+  StoreState = auto()
+  StoreZip = auto()
+  Category = auto()
+  ManufacturerName = auto()
+  SKUCode = auto()
+  UPCCode = auto()
+  ItemDescription = auto()
+  UnitMeasure = auto()
+  QtySold = auto()
+  ConsumerUnits = auto()
+  MultiUnitIndicator = auto()
+  TotalMultiUnitDiscountQty = auto()
+  TotalMultiUnitDiscountAmt = auto()
+  RetailerFundedDiscountName = auto()
+  RetailerFundedDiscountAmt = auto()
+  CouponDiscountName = auto()
+  CouponDiscountAmt = auto()
+  OtherManufacturerDiscountName = auto()
+  OtherManufacturerDiscountAmt = auto()
+  LoyaltyDiscountName = auto()
+  LoyaltyDiscountAmt = auto()
+  FinalSalesPrice = auto()
+  StoreTelephone = auto()
+  StoreContactName = auto()
+  StoreContactEmail = auto()
+  ProductGroupingCode = auto()
+  ProductGroupingName = auto()
+  LoyaltyIDNumber = auto()
+  AdultTobConsumerPhoneNum = auto()
+  AgeValidationMethod = auto()
+  ManufacturerOfferName = auto()
+  ManufacturerOfferAmt = auto()
+  PurchaseType = auto()
+  ReservedField43 = auto()
+  ReservedField44 = auto()
+  ReservedField45 = auto()
+
+
+class ITDScanHeaders(ColNameEnum):
+  pass
+
+
+class ItemizedInvoiceCols(ColNameEnum):
+  __init_exclude__ = [
+    "Store_Number",
+    "Store_Name",
+    "Store_Address",
+    "Store_City",
+    "Store_State",
+    "Store_Zip",
+    "Store_Telephone",
+    "Store_ContactName",
+    "Store_ContactEmail",
+    "Retail_Multipack_Quantity",
+    "Retail_Multipack_Disc_Amt",
+    "Acct_Promo_Name",
+    "Acct_Discount_Amt",
+    "Manufacturer_Discount_Amt",
+    "PID_Coupon",
+    "PID_Coupon_Discount_Amt",
+    "Manufacturer_Multipack_Quantity",
+    "Manufacturer_Multipack_Discount_Amt",
+    "Manufacturer_Promo_Desc",
+    "Manufacturer_Buydown_Desc",
+    "Manufacturer_Buydown_Amt",
+    "Manufacturer_Multipack_Desc",
+    "Coupon_Desc",
+  ]
+  Invoice_Number = auto()
+  CustNum = auto()
+  Phone_1 = auto()
+  AgeVerificationMethod = auto()
+  AgeVerification = auto()
+  LineNum = auto()
+  Cashier_ID = auto()
+  Station_ID = auto()
+  ItemNum = auto()
+  ItemName = auto()
+  ItemName_Extra = auto()
+  DiffItemName = auto()
+  Dept_ID = auto()
+  Unit_Type = auto()
+  DateTime = auto()
+  Quantity = auto()
+  CostPer = auto()
+  PricePer = auto()
+  Tax1Per = auto()
+  # Store_ID = auto()
+  origPricePer = auto()
+  BulkRate = auto()
+  SalePricePer = auto()
+  PricePerBeforeDiscount = auto()
+  PriceChangedBy = auto()
+  Store_Number = auto()
+  Store_Name = auto()
+  Store_Address = auto()
+  Store_City = auto()
+  Store_State = auto()
+  Store_Zip = auto()
+  Store_Telephone = auto()
+  Store_ContactName = auto()
+  Store_ContactEmail = auto()
+  Retail_Multipack_Quantity = auto()
+  Retail_Multipack_Disc_Amt = auto()
+  Acct_Promo_Name = auto()
+  Acct_Discount_Amt = auto()
+  Manufacturer_Discount_Amt = auto()
+  PID_Coupon = auto()
+  PID_Coupon_Discount_Amt = auto()
+  Manufacturer_Multipack_Quantity = auto()
+  Manufacturer_Multipack_Discount_Amt = auto()
+  Manufacturer_Promo_Desc = auto()
+  Manufacturer_Buydown_Desc = auto()
+  Manufacturer_Buydown_Amt = auto()
+  Manufacturer_Multipack_Desc = auto()
+  Coupon_Desc = auto()
+
+
+class BulkRateCols(ColNameEnum):
+  ItemNum = auto()
+  Bulk_Price = auto()
+  Bulk_Quan = auto()
+
+
+class GSheetsStoreInfoCols(ColNameEnum):
+  StoreNum = auto()
+  Phone = auto()
+  Address = auto()
+  Address2 = auto()
+  City = auto()
+  State = auto()
+  Zip = auto()
+  Email = auto()
+
+
+class GSheetsUnitsOfMeasureCols(ColNameEnum):
+  UPC = auto()
+  Item_Name = auto()
+  Manufacturer = auto()
+  Unit_of_Measure = auto()
+  Quantity = auto()
+
+
+class GSheetsVAPDiscountsCols(ColNameEnum):
+  UPC = auto()
+  Item_Name = auto()
+  Manufacturer = auto()
+  Discount_Amt = auto()
+  Discount_Type = auto()
+
+
+class GSheetsBuydownsCols(ColNameEnum):
+  UPC = auto()
+  State = auto()
+  Item_Name = auto()
+  Manufacturer = auto()
+  Buydown_Type_1 = auto()
+  Buydown_Amt_1 = auto()
+  Buydown_Type_2 = auto()
+  Buydown_Amt_2 = auto()
+  Buydown_Type_3 = auto()
+  Buydown_Amt_3 = auto()
+  Buydown_Type_4 = auto()
+  Buydown_Amt_4 = auto()
+  Buydown_Type_5 = auto()
+  Buydown_Amt_5 = auto()
+  Buydown_Type_6 = auto()
+  Buydown_Amt_6 = auto()
+  Buydown_Type_7 = auto()
+  Buydown_Amt_7 = auto()
+  Buydown_Type_8 = auto()
+  Buydown_Amt_8 = auto()
+  Buydown_Type_9 = auto()
+  Buydown_Amt_9 = auto()
+  Buydown_Type_10 = auto()
+  Buydown_Amt_10 = auto()

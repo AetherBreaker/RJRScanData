@@ -207,39 +207,7 @@ pip-selfcheck.json
 /store_sql_creds.json
 /ftp_creds.json
 /_testing_pickles
-Test Scan Files/SFT00120250118A.txt
-Test Scan Files/SFT00120250118B.txt
-Test Scan Files/SFT00120250125PMCigs.txt
-Test Scan Files/SFT00120250125PMCigsMarl.txt
-Test Scan Files/SFT00120250126RJRCigs.txt
-Test Scan Files/SFT00120250126RJRCigsMarl.txt
-Test Scan Files/SFT00220250125PMWithBuydowns.txt
-Test Scan Files/SFT00220250126RJRWithBuydowns.txt
-Test Scan Files/SFT00920250119RJRBagTob.txt
-Test Scan Files/SFT00920250119RJRChewHelx.txt
-Test Scan Files/SFT00920250119RJRChews.txt
-Test Scan Files/SFT00920250119RJRChewUSST.txt
-Test Scan Files/SFT00920250119RJRCigs.txt
-Test Scan Files/SFT00920250119RJRCigsMarl.txt
-Test Scan Files/SFT00920250119RJRDispos.txt
-Test Scan Files/SFT00920250119RJRT21JMC.txt
-Test Scan Files/SFT00920250119RJRT21LCig.txt
-Test Scan Files/SFT00920250119RJRT21Wrap.txt
-Test Scan Files/SFT00920250125PMBagTob.txt
-Test Scan Files/SFT00920250125PMChewHelx.txt
-Test Scan Files/SFT00920250125PMChews.txt
-Test Scan Files/SFT00920250125PMChews18.txt
-Test Scan Files/SFT00920250125PMChewsUSST.txt
-Test Scan Files/SFT00920250125PMCigar.txt
-Test Scan Files/SFT00920250125PMCigars.txt
-Test Scan Files/SFT00920250125PMCigs.txt
-Test Scan Files/SFT00920250125PMCigsMarl.txt
-Test Scan Files/SFT00920250125PMCigTube.txt
-Test Scan Files/SFT00920250125PMDispos.txt
-Test Scan Files/SFT00920250125PMPreNJoy.txt
-Test Scan Files/SFT00920250125PMT18Wrap.txt
-Test Scan Files/SFT00920250125PMT21JMC.txt
-Test Scan Files/SFT00920250125PMT21LCig.txt
-Test Scan Files/SFT00920250125PMT21Wrap.txt
-Test Scan Files/SFT02920250105.txt
-Test Scan Files/SFT05820250105.txt
+Test Scan Files/
+Test Scan Files/*
+daily_logs/
+daily_logs/*

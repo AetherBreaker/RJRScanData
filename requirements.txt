@@ -1,0 +1,10 @@
+gspread
+pandas
+paramiko
+pydantic
+pyinstaller
+pyodbc
+PyPika
+pytz
+rich
+SQLAlchemy
