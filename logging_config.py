@@ -53,9 +53,9 @@ class FixedRichHandler(RichHandler):
     time_format = None if self.formatter is None else self.formatter.datefmt
     log_time = datetime.fromtimestamp(record.created)
 
-    log_renderable = self._log_render(
+    return self._log_render(
       self.console,
-      [message_renderable] if not traceback else [message_renderable, traceback],
+      [message_renderable, traceback] if traceback else [message_renderable],
       log_time=log_time,
       time_format=time_format,
       level=level,
@@ -63,7 +63,6 @@ class FixedRichHandler(RichHandler):
       line_no=record.lineno,
       link_path=record.pathname if self.enable_link_path else None,
     )
-    return log_renderable
 
 
 class FixedLogRecord(logging.LogRecord):

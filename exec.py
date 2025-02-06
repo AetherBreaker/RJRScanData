@@ -1,6 +1,7 @@
 from datetime import timedelta
 from logging import getLogger
 
+from dateutil.relativedelta import relativedelta
 from pandas import concat
 from rich.progress import (
   BarColumn,
@@ -12,18 +13,21 @@ from rich.progress import (
 )
 
 from dataframe_transformations import (
-  apply_addrinfo_and_initial_validation,
   apply_model_to_df_transforming,
-  calculate_coupons,
+  process_item_lines,
 )
 from gsheet_data_processing import SheetCache
 from logging_config import configure_logging, rich_console
 from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
 from sql_querying import query_all_stores_multithreaded
-from types_column_names import ItemizedInvoiceCols
+from types_column_names import (
+  GSheetsUnitsOfMeasureCols,
+  ItemizedInvoiceCols,
+  PMUSAScanHeaders,
+  RJRScanHeaders,
+)
 from types_custom import QueryDict
 from utils import get_last_sun, taskgen_whencalled
-from validation_other import ItemizedInvoiceModel
 from validation_rjr import RJRValidationModel
 
 configure_logging()
@@ -31,27 +35,43 @@ configure_logging()
 logger = getLogger(__name__)
 
 
-last_sun = get_last_sun()
+with open("pmusaheaders.csv", "w") as f:
+  f.write("|".join(PMUSAScanHeaders.all_columns()))
+
+
+last_sun = get_last_sun() + relativedelta(weeks=1)
 start_date = last_sun - timedelta(days=8)
 queries: QueryDict = {
   "bulk_rate_data": build_bulk_info_query(),
   "itemized_invoice_data": build_itemized_invoice_query(start_date, last_sun),
 }
 
-result = query_all_stores_multithreaded(queries)
+sheet_data = SheetCache()
+addr_data = sheet_data.info
+unit_measure_data = sheet_data.uom
+
+errors = []
+
+result = query_all_stores_multithreaded(
+  queries=queries,
+  addr_info=addr_data,
+  errors=errors,
+)
 
 bulk_rates = result["bulk_data"]
 
 
-itemized_invoices = result["itemized_invoice_data"]
-itemized_invoices.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
+item_lines = result["itemized_invoice_data"]
+item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
 
 
-sheet_data = SheetCache()
-addr_data = sheet_data.info
+item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = item_lines[ItemizedInvoiceCols.Unit_Type].map(
+  unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure]
+)
+
 
 series_to_concat = []
-errors = []
+
 
 with Progress(
   BarColumn(),
@@ -61,22 +81,13 @@ with Progress(
   TextColumn("[progress.description]{task.description}"),
   console=rich_console,
 ) as pbar:
-  itemized_invoices.apply(
-    taskgen_whencalled(
-      pbar,
-      description="Validating itemized invoices",
-      total=len(itemized_invoices),
-    )(apply_addrinfo_and_initial_validation)(),
-    axis=1,
-    model=ItemizedInvoiceModel,
-    errors=errors,
-    new_rows=series_to_concat,
-    addr_data=addr_data,
+  item_lines.sort_values(
+    by=[
+      ItemizedInvoiceCols.Store_Number,
+      ItemizedInvoiceCols.DateTime,
+    ],
+    inplace=True,
   )
-
-  item_lines = concat(series_to_concat, axis=1).T
-
-  item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
 
   store_invoice_groups = item_lines.groupby(
     by=[ItemizedInvoiceCols.Store_Number, ItemizedInvoiceCols.Invoice_Number],
@@ -90,8 +101,11 @@ with Progress(
       progress=pbar,
       description="Processing coupons",
       total=len(store_invoice_groups),
-    )(calculate_coupons)()
+    )(process_item_lines)(),
+    bulk_rate_data=bulk_rates,
   )
+
+  item_lines.to_csv("item_lines.csv")
 
   new_rows = []
 
@@ -108,6 +122,8 @@ with Progress(
   )
 
   rjr_scan = concat(new_rows, axis=1).T
+
+  rjr_scan = rjr_scan[RJRScanHeaders.all_columns()]
 
   rjr_scan.to_csv("rjr_scan.csv")
 pass

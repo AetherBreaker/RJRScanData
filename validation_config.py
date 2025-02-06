@@ -3,6 +3,7 @@ if __name__ == "__main__":
 
   configure_logging()
 
+from decimal import Decimal
 from logging import getLogger
 from typing import Any, Self
 
@@ -34,25 +35,29 @@ class CustomBaseModel(BaseModel):
   def log_failed_field_validations(
     cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
   ) -> Any:
-    if info.field_name == "SalePricePer":
-      pass
     results = None
     try:
       results = handler(data)
     except Exception as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
 
-      pass
+      if (
+        info.field_name != "Dept_ID"
+        and info.field_name != "Quantity"
+        and not isinstance(data, Decimal)
+      ):
+        pass
 
-      logger.error(
-        f"Error validating {info.field_name} in {cls.__name__}: {e}",
-        exc_info=(exc_type, exc_val, exc_tb),
-        stack_info=True,
-      )
-      if errors := info.context.get("errors"):
-        errors.append(e)
+        logger.error(
+          f"Error validating {info.field_name} in {cls.__name__}: {e}",
+          exc_info=(exc_type, exc_val, exc_tb),
+          stack_info=True,
+        )
+        if errors := info.context.get("errors"):
+          errors.append(e)
 
-      pass
+        if row_errs := info.context.get("row_err"):
+          row_errs[info.field_name] = e
 
     return results or data
 
@@ -65,6 +70,9 @@ class CustomBaseModel(BaseModel):
       return handler(data)
     except ValidationError as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
+
+      pass
+
       logger.error(
         f"Error validating {cls.__name__}: {e}",
         exc_info=(exc_type, exc_val, exc_tb),

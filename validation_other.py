@@ -6,26 +6,25 @@ if __name__ == "__main__":
 from datetime import datetime
 from decimal import Decimal
 from re import compile
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BeforeValidator, Field, ValidationInfo, field_validator
 
-from types_custom import DiscountTypesEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
+from types_custom import DeptIDsEnum, DiscountTypesEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import truncate_decimal
 from validation_config import CustomBaseModel
-from validators_shared import strip_string_to_digits, validate_unit_type
+from validators_shared import abs_decimal, strip_string_to_digits, validate_unit_type
 
 
 class BulkRateModel(CustomBaseModel):
   ItemNum: str
-  Store_ID: StoreNum
   Bulk_Price: Decimal
-  Bulk_Quan: int
+  Bulk_Quan: Decimal
 
 
 class ItemizedInvoiceModel(CustomBaseModel):
   Invoice_Number: int
-  CustNum: str
+  CustNum: Annotated[str, Field(pattern=r"[\w\d]+")]
   Phone_1: Annotated[Optional[int], BeforeValidator(strip_string_to_digits)]
   AgeVerificationMethod: str
   AgeVerification: str
@@ -36,15 +35,18 @@ class ItemizedInvoiceModel(CustomBaseModel):
   ItemName: str
   ItemName_Extra: Optional[str]
   DiffItemName: str
-  Dept_ID: str
+  Dept_ID: DeptIDsEnum
   Unit_Type: Annotated[UnitsOfMeasureEnum, BeforeValidator(validate_unit_type)]
   DateTime: datetime
   Quantity: int
   CostPer: Annotated[Decimal, AfterValidator(truncate_decimal)]
   PricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
   Tax1Per: Annotated[Decimal, AfterValidator(truncate_decimal)]
+  Inv_Cost: Annotated[Decimal, AfterValidator(truncate_decimal)]
+  Inv_Price: Annotated[Decimal, AfterValidator(truncate_decimal), AfterValidator(abs_decimal)]
+  Inv_Retail_Price: Annotated[Decimal, AfterValidator(truncate_decimal)]
   origPricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
-  BulkRate: Optional[str]
+  MixNMatchRate: Optional[str]
   SalePricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
   PricePerBeforeDiscount: Annotated[Decimal, AfterValidator(truncate_decimal)]
   PriceChangedBy: str
@@ -64,16 +66,16 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Retail_Multipack_Disc_Amt: Optional[Decimal] = None
   Acct_Promo_Name: Optional[str] = None
   Acct_Discount_Amt: Optional[Decimal] = None
-  Manufacturer_Discount_Amt: Optional[Decimal] = None
   PID_Coupon: Optional[str] = None
   PID_Coupon_Discount_Amt: Optional[Decimal] = None
   Manufacturer_Multipack_Quantity: Optional[int] = None
   Manufacturer_Multipack_Discount_Amt: Optional[Decimal] = None
+  Manufacturer_Multipack_Desc: Optional[str] = None
   Manufacturer_Promo_Desc: Optional[str] = None
+  Manufacturer_Discount_Amt: Optional[Decimal] = None
   Manufacturer_Buydown_Desc: Optional[str] = None
   Manufacturer_Buydown_Amt: Optional[Decimal] = None
-  Manufacturer_Multipack_Desc: Optional[str] = None
-  Coupon_Desc: Optional[str] = None
+  loyalty_disc_desc: Optional[str] = None
 
 
 class StoreInfoModel(CustomBaseModel):
@@ -182,3 +184,23 @@ class BuydownsModel(CustomBaseModel):
         )
 
     return value
+
+
+class ScannableCouponsModel(CustomBaseModel):
+  Coupon_UPC: str
+  Coupon_Description: str
+  Coupon_Provider: str
+  Applicable_Departments: list[str]
+  Applicable_UPCs: list[str]
+
+  @field_validator("Applicable_Departments", "Applicable_UPCs", mode="before")
+  @classmethod
+  def str_to_list(
+    cls, value: str, info: ValidationInfo, delimiter: Literal[",", "|", "\t"] = "|"
+  ) -> list[str]:
+    try:
+      return [item.strip() for item in value.split(delimiter)]
+    except AttributeError as e:
+      raise ValueError(
+        f"Value {value} is not a string and cannot be split into a list.", info
+      ) from e

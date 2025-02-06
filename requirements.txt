@@ -1,5 +1,5 @@
 gspread
-pandas
+pandas[performance]
 paramiko
 pydantic
 pyinstaller

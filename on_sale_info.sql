@@ -1,0 +1,16 @@
+SELECT
+  ItemNum,
+  Store_ID,
+  Sale_Start,
+  Sale_End,
+  [Percent],
+  Price,
+  SalePriceType,
+  InsertOriginatorId,
+  UpdateOriginatorId,
+  UpdateTimestamp,
+  ModifiedDate,
+  CreateDate,
+  CreateTimestamp
+FROM
+  cresql.dbo.Inventory_OnSale_Info

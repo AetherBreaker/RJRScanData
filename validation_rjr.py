@@ -20,7 +20,9 @@ logger = getLogger(__name__)
 
 
 class RJRValidationModel(CustomBaseModel):
-  outlet_number: Annotated[StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"))]
+  outlet_number: Annotated[
+    StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"), pattern=r"[\w\d]+")
+  ]
   address_1: Annotated[Optional[str], Field(alias="Store_Address")]
   address_2: Annotated[Optional[str], Field(alias="Store_Address2")]
   city: Annotated[Optional[str], Field(alias="Store_City")]
@@ -31,7 +33,7 @@ class RJRValidationModel(CustomBaseModel):
   scan_id: Annotated[int, Field(alias="LineNum")]
   register_id: Annotated[int, Field(alias="Station_ID")]
   quantity: Annotated[int, Field(alias="Quantity")]
-  price: Annotated[Decimal, Field(alias="PricePer"), AfterValidator(truncate_decimal)]
+  price: Annotated[Decimal, Field(alias="Inv_Price"), AfterValidator(truncate_decimal)]
   upc_code: Annotated[str, Field(alias="ItemNum")]
   upc_description: Annotated[str, Field(alias="ItemName")]
   unit_of_measure: Annotated[
@@ -69,7 +71,7 @@ class RJRValidationModel(CustomBaseModel):
     Optional[str], Field(alias="Manufacturer_Multipack_Desc")
   ] = None
   account_loyalty_id_number: Annotated[str, Field(alias="CustNum")]
-  coupon_desc: Annotated[Optional[str], Field(alias="Coupon_Desc")] = None
+  coupon_desc: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
 
   @computed_field
   @property

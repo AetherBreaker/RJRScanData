@@ -115,8 +115,7 @@ def unsafe_decimal_converter[T: str](x: T) -> Decimal | float | T:
 
 def truncate_decimal(x: Decimal, exponent: Decimal = DECIMAL_MAX_DIGITS) -> Decimal:
   try:
-    result = Decimal(x).quantize(exponent, ROUND_FLOOR)
-    return result
+    return Decimal(x).quantize(exponent, ROUND_FLOOR)
   except (InvalidOperation, TypeError):
     return x
 
@@ -172,7 +171,7 @@ if __debug__:  # noqa
   RESULTS_PICKLE_CACHE.mkdir(exist_ok=True)
 
 
-def cached_for_testing(func):
+def cached_for_testing(func: Callable):
   """
   decorator to pickle the results of a function to disk for testing purposes
 
@@ -182,34 +181,34 @@ def cached_for_testing(func):
   Returns:
       The unpickled result of the function if it exists, otherwise the result of the function
   """
-  if __debug__:
-
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-      # hash the function name and the arguments to get a unique filename
-      arghash = md5(usedforsecurity=False)
-      arghash.update(func.__name__.encode())
-      for arg in args:
-        if isinstance(arg, (str, int, float)):
-          arghash.update(str(arg).encode())
-        elif isinstance(arg, Sequence):
-          for item in arg:
-            if isinstance(item, (str, int, float)):
-              arghash.update(str(item).encode())
-
-      filename = RESULTS_PICKLE_CACHE / f"{arghash.hexdigest()}.pickle"
-      if filename.exists():
-        with filename.open("rb") as file:
-          return pickle.load(file)
-      else:
-        result = func(*args, **kwargs)
-        with filename.open("wb") as file:
-          pickle.dump(result, file)
-        return result
-
-    return wrapper
-  else:
+  if not __debug__:
     return func
+
+  @wraps(func)
+  def wrapper(*args, **kwargs):
+    # hash the function name and the arguments to get a unique filename
+    arghash = md5(usedforsecurity=False)
+    func_path = f"{func.__module__}.{func.__name__}"
+    arghash.update(func_path.encode())
+    for arg in args:
+      if isinstance(arg, (str, int, float)):
+        arghash.update(str(arg).encode())
+      elif isinstance(arg, Sequence):
+        for item in arg:
+          if isinstance(item, (str, int, float)):
+            arghash.update(str(item).encode())
+
+    filename = RESULTS_PICKLE_CACHE / f"{arghash.hexdigest()}.pickle"
+    if filename.exists():
+      with filename.open("rb") as file:
+        return pickle.load(file)
+    else:
+      result = func(*args, **kwargs)
+      with filename.open("wb") as file:
+        pickle.dump(result, file)
+      return result
+
+  return wrapper
 
 
 class SingletonType(type):
@@ -218,13 +217,13 @@ class SingletonType(type):
     cls.__shared_instance_lock__ = Lock()
     return cls
 
-  def __call__(cls, *args, **kwargs):
-    with cls.__shared_instance_lock__:
+  def __call__(self, *args, **kwargs):
+    with self.__shared_instance_lock__:
       try:
-        return cls.__shared_instance__
+        return self.__shared_instance__
       except AttributeError:
-        cls.__shared_instance__ = super(SingletonType, cls).__call__(*args, **kwargs)
-        return cls.__shared_instance__
+        self.__shared_instance__ = super(SingletonType, self).__call__(*args, **kwargs)
+        return self.__shared_instance__
 
 
 def convert_storenum_to_str(storenum: StoreNum) -> str:

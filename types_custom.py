@@ -3,13 +3,15 @@ if __name__ == "__main__":
 
   configure_logging()
 
-from enum import Enum
+from enum import Enum, auto
 from logging import getLogger
 from typing import Literal, NamedTuple, Optional, TypedDict
 
 from pandas import DataFrame
 from pyodbc import Row
 from pypika.queries import QueryBuilder
+
+from types_column_names import ColNameEnum
 
 logger = getLogger(__name__)
 
@@ -43,6 +45,114 @@ class StatesEnum(Enum):
   WI = "WI"
 
 
+class DeptIDsEnum(ColNameEnum):
+  __exclude__ = [
+    "Battery",
+    "CigAcc",
+    "CigTube",
+    "Detox",
+    "EcigAcc",
+    "EcigCoil",
+    "Ecigs",
+    "FoodBev",
+    "Fuel",
+    "Furnish",
+    "GWP",
+    "GlassCln",
+    "Grinder",
+    "GrowSup",
+    "Handpipe",
+    "Herbal",
+    "Hookahs",
+    "Incenses",
+    "Kits",
+    "Lighter",
+    "Novelty",
+    "OWP",
+    "OffSup",
+    "PipeAcc",
+    "PreHerb",
+    "RetSup",
+    "RollAcc",
+    "RollMach",
+    "Scales",
+    "Scents",
+    "Startup",
+    "Storage",
+    "T18Wrap",
+    "TechSup",
+    "Torches",
+    "VapeLiq",
+    "Zippo",
+  ]
+  BDsBrand = auto()
+  BDsLine = auto()
+  BDsMisc = auto()
+  BagTob = auto()
+  Battery = auto()
+  ChewHelx = auto()
+  ChewUSST = auto()
+  Chews = auto()
+  Chews18 = auto()
+  CigAcc = auto()
+  CigTube = auto()
+  Cigar = auto()
+  Cigs = auto()
+  CigsMarl = auto()
+  Coupon = "Coupon$"
+  Detox = auto()
+  Dispos = auto()
+  EcigAcc = auto()
+  EcigCoil = auto()
+  Ecigs = auto()
+  FGIDisc = auto()
+  FoodBev = auto()
+  Fuel = auto()
+  Furnish = auto()
+  GWP = auto()
+  GlassCln = auto()
+  Grinder = auto()
+  GrowSup = auto()
+  Handpipe = auto()
+  Herbal = auto()
+  HookaTob = auto()
+  Hookahs = auto()
+  Incenses = auto()
+  Kits = auto()
+  Lighter = auto()
+  Novelty = auto()
+  OWP = auto()
+  OffSup = auto()
+  PMCOUPON = auto()
+  PMPromos = auto()
+  PipeAcc = auto()
+  PreHerb = auto()
+  PreNJOY = auto()
+  Prefills = auto()
+  PromosLT = auto()
+  PromosST = auto()
+  RJRVAP = auto()
+  RetSup = auto()
+  RollAcc = auto()
+  RollMach = auto()
+  Scales = auto()
+  Scents = auto()
+  Startup = auto()
+  Storage = auto()
+  T18Wrap = auto()
+  T21JMC = auto()
+  T21LCig = auto()
+  T21Wrap = auto()
+  TechSup = auto()
+  TobAcc = auto()
+  Torches = auto()
+  VAPBOGO = auto()
+  VAPBTGO = auto()
+  VAPFlat = auto()
+  VapeLiq = auto()
+  Zippo = auto()
+
+
 type StoreNum = int
 
 type SQLPWD = str
@@ -67,6 +177,11 @@ type PromoFlag = Literal["N", "Y"]
 class QueryDict(TypedDict):
   bulk_rate_data: QueryBuilder
   itemized_invoice_data: QueryBuilder
+
+
+class QueryResultsDict(TypedDict):
+  bulk_rate_data: BulkDataRaw
+  itemized_invoice_data: ItemizedDataRaw
 
 
 class SQLCreds(TypedDict):

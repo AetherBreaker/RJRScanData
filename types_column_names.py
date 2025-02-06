@@ -11,7 +11,7 @@ logger = getLogger(__name__)
 
 class ColNameEnum(StrEnum):
   __exclude__ = []
-  __init_exclude__ = []
+  __init_include__ = []
 
   @classmethod
   def ordered_column_names(cls, *columns: list[str]) -> list[str]:
@@ -31,7 +31,7 @@ class ColNameEnum(StrEnum):
     return [
       str(column)
       for column in cls
-      if str(column) not in cls.__init_exclude__ and not str(column).startswith("_")
+      if str(column) in cls.__init_include__ and not str(column).startswith("_")
     ]
 
   @classmethod
@@ -42,6 +42,7 @@ class ColNameEnum(StrEnum):
   def true_all_columns(cls) -> list[str]:
     return [str(column) for column in cls]
 
+  @staticmethod
   def _generate_next_value_(name, start, count, last_values):
     """
     Return the member name.
@@ -139,30 +140,34 @@ class ITDScanHeaders(ColNameEnum):
 
 
 class ItemizedInvoiceCols(ColNameEnum):
-  __init_exclude__ = [
-    "Store_Number",
-    "Store_Name",
-    "Store_Address",
-    "Store_City",
-    "Store_State",
-    "Store_Zip",
-    "Store_Telephone",
-    "Store_ContactName",
-    "Store_ContactEmail",
-    "Retail_Multipack_Quantity",
-    "Retail_Multipack_Disc_Amt",
-    "Acct_Promo_Name",
-    "Acct_Discount_Amt",
-    "Manufacturer_Discount_Amt",
-    "PID_Coupon",
-    "PID_Coupon_Discount_Amt",
-    "Manufacturer_Multipack_Quantity",
-    "Manufacturer_Multipack_Discount_Amt",
-    "Manufacturer_Promo_Desc",
-    "Manufacturer_Buydown_Desc",
-    "Manufacturer_Buydown_Amt",
-    "Manufacturer_Multipack_Desc",
-    "Coupon_Desc",
+  __init_include__ = [
+    "Invoice_Number",
+    "CustNum",
+    "Phone_1",
+    "AgeVerificationMethod",
+    "AgeVerification",
+    "LineNum",
+    "Cashier_ID",
+    "Station_ID",
+    "ItemNum",
+    "ItemName",
+    "ItemName_Extra",
+    "DiffItemName",
+    "Dept_ID",
+    "Unit_Type",
+    "DateTime",
+    "Quantity",
+    "CostPer",
+    "PricePer",
+    "Tax1Per",
+    "Inv_Cost",
+    "Inv_Price",
+    "Inv_Retail_Price",
+    "origPricePer",
+    "MixNMatchRate",
+    "SalePricePer",
+    "PricePerBeforeDiscount",
+    "PriceChangedBy",
   ]
   Invoice_Number = auto()
   CustNum = auto()
@@ -183,9 +188,12 @@ class ItemizedInvoiceCols(ColNameEnum):
   CostPer = auto()
   PricePer = auto()
   Tax1Per = auto()
+  Inv_Cost = auto()
+  Inv_Price = auto()
+  Inv_Retail_Price = auto()
   # Store_ID = auto()
   origPricePer = auto()
-  BulkRate = auto()
+  MixNMatchRate = auto()
   SalePricePer = auto()
   PricePerBeforeDiscount = auto()
   PriceChangedBy = auto()
@@ -202,19 +210,25 @@ class ItemizedInvoiceCols(ColNameEnum):
   Retail_Multipack_Disc_Amt = auto()
   Acct_Promo_Name = auto()
   Acct_Discount_Amt = auto()
-  Manufacturer_Discount_Amt = auto()
   PID_Coupon = auto()
   PID_Coupon_Discount_Amt = auto()
   Manufacturer_Multipack_Quantity = auto()
   Manufacturer_Multipack_Discount_Amt = auto()
+  Manufacturer_Multipack_Desc = auto()
   Manufacturer_Promo_Desc = auto()
+  Manufacturer_Discount_Amt = auto()
   Manufacturer_Buydown_Desc = auto()
   Manufacturer_Buydown_Amt = auto()
-  Manufacturer_Multipack_Desc = auto()
-  Coupon_Desc = auto()
+  loyalty_disc_desc = auto()
+  loyalty_disc_amt = auto()
 
 
 class BulkRateCols(ColNameEnum):
+  __init_include__ = [
+    "ItemNum",
+    "Bulk_Price",
+    "Bulk_Quan",
+  ]
   ItemNum = auto()
   Bulk_Price = auto()
   Bulk_Quan = auto()
@@ -272,3 +286,11 @@ class GSheetsBuydownsCols(ColNameEnum):
   Buydown_Amt_9 = auto()
   Buydown_Type_10 = auto()
   Buydown_Amt_10 = auto()
+
+
+class GSheetsScannableCouponsCols(ColNameEnum):
+  Coupon_UPC = auto()
+  Coupon_Description = auto()
+  Coupon_Provider = auto()
+  Applicable_Departments = auto()
+  Applicable_UPCs = auto()

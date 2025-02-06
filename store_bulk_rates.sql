@@ -4,4 +4,4 @@ SELECT
   IBI.Bulk_Price,
   IBI.Bulk_Quan
 FROM
-  cresql.dbo.Inventory_Bulk_Info IBI
+  cresqlc.dbo.Inventory_Bulk_Info IBI

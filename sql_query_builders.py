@@ -7,8 +7,7 @@ from datetime import date, datetime, timedelta
 from logging import getLogger
 from pathlib import Path
 
-from pypika import Database, Query
-from pypika.queries import QueryBuilder
+from pypika.queries import Database, Query, QueryBuilder, Schema, Table
 
 from utils import get_last_sun
 
@@ -17,15 +16,14 @@ logger = getLogger(__name__)
 
 CWD = Path.cwd()
 
-LAST_USED_DB_QUERYFILE = (CWD / __file__).with_name("last used database name.sql")
 
 _DATABASE_CRESQL = Database("cresql")
-_schema = _DATABASE_CRESQL.dbo
-_table_itemized_invoices = _schema.Invoice_Itemized
-_table_inventory = _schema.Inventory
-_table_invoice_totals = _schema.Invoice_Totals
-_table_inventory_bulk_info = _schema.Inventory_Bulk_Info
-_table_customer = _schema.Customer
+_schema: Schema = _DATABASE_CRESQL.dbo
+_table_itemized_invoices: Table = _schema.Invoice_Itemized
+_table_inventory: Table = _schema.Inventory
+_table_invoice_totals: Table = _schema.Invoice_Totals
+_table_inventory_bulk_info: Table = _schema.Inventory_Bulk_Info
+_table_customer: Table = _schema.Customer
 
 
 def update_database_name(new_db_name: str) -> None:
@@ -50,7 +48,7 @@ def build_itemized_invoice_query(
   if isinstance(end_date, datetime):
     end_date = end_date.date()
 
-  ItemizedInvoicesQuery = (
+  return (
     (
       Query.from_(_table_itemized_invoices)
       .left_join(_table_inventory)
@@ -80,6 +78,9 @@ def build_itemized_invoice_query(
       _table_itemized_invoices.CostPer,
       _table_itemized_invoices.PricePer,
       _table_itemized_invoices.Tax1Per,
+      _table_inventory.Cost.as_("Inv_Cost"),
+      _table_inventory.Price.as_("Inv_Price"),
+      _table_inventory.Retail_Price.as_("Inv_Retail_Price"),
       # _table_itemized_invoices.Kit_ItemNum,
       # _table_itemized_invoices.Store_ID,
       _table_itemized_invoices.origPricePer,
@@ -97,8 +98,6 @@ def build_itemized_invoice_query(
     .where(_table_invoice_totals.DateTime < end_date)
   )
 
-  return ItemizedInvoicesQuery
-
 
 def build_bulk_info_query() -> QueryBuilder:
   """Build a query to retrieve bulk info for all items.
@@ -107,7 +106,7 @@ def build_bulk_info_query() -> QueryBuilder:
   :rtype: QueryBuilder
   """
 
-  q = Query.from_(_table_inventory_bulk_info).select(
+  return Query.from_(_table_inventory_bulk_info).select(
     _table_inventory_bulk_info.ItemNum,
     # _TABLE_INVENTORY_BULK_INFO.Store_ID,
     _table_inventory_bulk_info.Bulk_Price,
@@ -121,8 +120,6 @@ def build_bulk_info_query() -> QueryBuilder:
     # _TABLE_INVENTORY_BULK_INFO.CreateDate,
     # _TABLE_INVENTORY_BULK_INFO.CreateTimestamp,
   )
-
-  return q
 
 
 if __name__ == "__main__":
