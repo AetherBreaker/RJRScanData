@@ -1,7 +1,13 @@
 from datetime import timedelta
 from logging import getLogger
 
+from dataframe_transformations import (
+  apply_model_to_df_transforming,
+  process_item_lines,
+)
 from dateutil.relativedelta import relativedelta
+from gsheet_data_processing import SheetCache
+from logging_config import configure_logging, rich_console
 from pandas import concat
 from rich.progress import (
   BarColumn,
@@ -11,13 +17,6 @@ from rich.progress import (
   TextColumn,
   TimeRemainingColumn,
 )
-
-from dataframe_transformations import (
-  apply_model_to_df_transforming,
-  process_item_lines,
-)
-from gsheet_data_processing import SheetCache
-from logging_config import configure_logging, rich_console
 from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
 from sql_querying import query_all_stores_multithreaded
 from types_column_names import (
@@ -50,7 +49,11 @@ sheet_data = SheetCache()
 addr_data = sheet_data.info
 unit_measure_data = sheet_data.uom
 
-errors = []
+buydowns_data = sheet_data.bds
+vap_data = sheet_data.vap
+
+
+errors = {}
 
 result = query_all_stores_multithreaded(
   queries=queries,
@@ -103,6 +106,8 @@ with Progress(
       total=len(store_invoice_groups),
     )(process_item_lines)(),
     bulk_rate_data=bulk_rates,
+    buydowns_data=buydowns_data,
+    vap_data=vap_data,
   )
 
   item_lines.to_csv("item_lines.csv")

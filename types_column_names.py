@@ -28,6 +28,8 @@ class ColNameEnum(StrEnum):
 
   @classmethod
   def init_columns(cls) -> list[str]:
+    if not cls.__init_include__:
+      return cls.all_columns()
     return [
       str(column)
       for column in cls
@@ -224,11 +226,6 @@ class ItemizedInvoiceCols(ColNameEnum):
 
 
 class BulkRateCols(ColNameEnum):
-  __init_include__ = [
-    "ItemNum",
-    "Bulk_Price",
-    "Bulk_Quan",
-  ]
   ItemNum = auto()
   Bulk_Price = auto()
   Bulk_Quan = auto()
@@ -266,26 +263,8 @@ class GSheetsBuydownsCols(ColNameEnum):
   State = auto()
   Item_Name = auto()
   Manufacturer = auto()
-  Buydown_Type_1 = auto()
-  Buydown_Amt_1 = auto()
-  Buydown_Type_2 = auto()
-  Buydown_Amt_2 = auto()
-  Buydown_Type_3 = auto()
-  Buydown_Amt_3 = auto()
-  Buydown_Type_4 = auto()
-  Buydown_Amt_4 = auto()
-  Buydown_Type_5 = auto()
-  Buydown_Amt_5 = auto()
-  Buydown_Type_6 = auto()
-  Buydown_Amt_6 = auto()
-  Buydown_Type_7 = auto()
-  Buydown_Amt_7 = auto()
-  Buydown_Type_8 = auto()
-  Buydown_Amt_8 = auto()
-  Buydown_Type_9 = auto()
-  Buydown_Amt_9 = auto()
-  Buydown_Type_10 = auto()
-  Buydown_Amt_10 = auto()
+  Buydown_Desc = auto()
+  Buydown_Amt = auto()
 
 
 class GSheetsScannableCouponsCols(ColNameEnum):
@@ -294,3 +273,12 @@ class GSheetsScannableCouponsCols(ColNameEnum):
   Coupon_Provider = auto()
   Applicable_Departments = auto()
   Applicable_UPCs = auto()
+
+
+class LazyEmployeesCols(ColNameEnum):
+  EmployeeID = auto()
+  FirstName = auto()  # TODO implement employee name lookup
+  LastName = auto()  # TODO implement employee name lookup
+  StoreNum = auto()
+  InfractionCount = auto()
+  LastInfractionDate = auto()

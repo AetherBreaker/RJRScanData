@@ -7,79 +7,123 @@ from decimal import Decimal
 from logging import getLogger
 from re import compile
 from string import Template
-from typing import Any, Type
-
-from pandas import DataFrame, Series
+from typing import Any, Callable, Type
 
 from dataframe_utils import combine_same_coupons, distribute_discount
-from types_column_names import BulkRateCols, ItemizedInvoiceCols
-from types_custom import AddressInfoType, BulkRateDataType, StoreNum
+from pandas import DataFrame, Series, isna
+from reporting_validation_errs import report_errors
+from types_column_names import (
+  BulkRateCols,
+  GSheetsBuydownsCols,
+  GSheetsVAPDiscountsCols,
+  ItemizedInvoiceCols,
+)
+from types_custom import (
+  AddressInfoType,
+  BulkRateDataType,
+  BuydownsDataType,
+  ModelContextType,
+  StoreNum,
+  VAPDataType,
+)
 from validation_config import CustomBaseModel
 
 logger = getLogger(__name__)
 
 
+base_context: ModelContextType = {
+  "skip_fields": {"Dept_ID": None, "Quantity": None},
+}
+
+
+def context_setup(func: Callable) -> Callable:
+  def wrapper(
+    row: Series,
+    errors: dict[int, Any] = None,
+    *args,
+    **kwargs,
+  ):
+    context = base_context.copy()
+
+    update = {
+      "row_id": row.name,
+      "input": row.to_dict(),
+      "row_err": {},
+    }
+
+    # if key storenum in row
+    if ItemizedInvoiceCols.Store_Number in row.index:
+      update["store_num"] = row[ItemizedInvoiceCols.Store_Number]
+
+    context.update(update)
+
+    result = func(
+      *args,
+      **kwargs,
+      context=context,
+      row=row,
+    )
+
+    if context["row_err"]:
+      if errors is not None:
+        row_errors = errors.get(row.name, [])
+        row_errors.append(context["row_err"])
+      report_errors(context)
+
+    return result
+
+  return wrapper
+
+
+@context_setup
 def apply_model_to_df_transforming(
-  row: Series, new_rows: list[Series], model: Type[CustomBaseModel], errors: list[Any]
+  context: ModelContextType,
+  row: Series,
+  new_rows: list[Series],
+  model: Type[CustomBaseModel],
 ) -> Series:
   """
   Apply a model to a row of a DataFrame.
   This version transforms the dataframe and should be passed an empty list to append new rows to
   for concatenation.
 
+  :param context: The context to use.
   :param row: The row to transform.
   :param new_rows: The list of new rows to append to.
   :param model: The model to apply.
   :return: The transformed row.
   """
 
-  # serialize row to a dict
-  row_dict = row.to_dict()
-
-  context = {
-    "row_id": row.name,
-    "errors": errors,
-    "input": row_dict,
-  }
-
   # create a new instance of the model
-  model = model.model_validate(row_dict, context=context)
+  model = model.model_validate(context["input"], context=context)
 
   # serialize the model to a dict
   model_dict = model.model_dump()
 
   # create a new Series from the model dict
-  new_row = Series(model_dict, name=row.name, dtype=object)
+  new_row = Series(model_dict, name=context["row_id"], dtype=object)
 
   new_rows.append(new_row)
 
   return row
 
 
+@context_setup
 def apply_model_to_df(
-  row: Series, model: Type[CustomBaseModel], errors: list[Any] = None
+  row: Series,
+  context: ModelContextType,
+  model: Type[CustomBaseModel],
 ) -> Series:
   """
   Apply a model to a row of a DataFrame.
 
+  :param context: The context to use.
   :param row: The row to transform.
   :param model: The model to apply.
-  :param errors: The list of errors to append to.
   :return: The transformed row.
   """
-
-  # serialize row to a dict
-  row_dict = row.to_dict()
-
-  context = {
-    "row_id": row.name,
-    "input": row_dict,
-  }
-  if errors:
-    context["errors"] = errors
-
   # create a new instance of the model
-  model = model.model_validate(row_dict, context=context)
+  model = model.model_validate(context["input"], context=context)
 
   # serialize the model to a dict
   model_dict = model.model_dump()
@@ -89,49 +133,39 @@ def apply_model_to_df(
   return row
 
 
+@context_setup
 def apply_addrinfo_and_initial_validation(
   row: Series,
+  context: ModelContextType,
   new_rows: list[Series],
   model: Type[CustomBaseModel],
   addr_data: AddressInfoType,
-  errors: list[Any],
 ) -> Series:
   """
   Apply a model to a row of a DataFrame.
 
+  :param context: The context to use.
   :param row: The row to transform.
+  :param new_rows: The list of new rows to append to.
   :param model: The model to apply.
-  :param errors: The list of errors to append to.
   :return: The transformed row.
   """
 
-  storenum: StoreNum = row[ItemizedInvoiceCols.Store_Number]
+  address_info = addr_data.loc[context["store_num"]].to_dict()
 
-  address_info = addr_data.loc[storenum].to_dict()
-
-  # serialize row to a dict
-  row_dict = row.to_dict()
-  row_dict.update(address_info)
-
-  context = {
-    "row_id": row.name,
-    "errors": errors,
-    "input": row_dict,
-    "storenum": storenum,
-    "row_err": {},
-  }
+  context["input"].update(address_info)
 
   # create a new instance of the model
-  model = model.model_validate(row_dict, context=context)
+  model = model.model_validate(context["input"], context=context)
 
-  # if dept_id failed to validate, skip this row and exclude from dataset
-  if "Dept_ID" in context["row_err"]:
-    return row
+  if quantity_err := context["row_err"].get("Quantity", None):
+    if isinstance(quantity_err[0], Decimal):
+      return row
 
   # serialize the model to a dict
   model_dict = model.model_dump()
 
-  new_row = Series(model_dict, name=row.name, dtype=object)
+  new_row = Series(model_dict, name=context["row_id"], dtype=object)
 
   new_rows.append(new_row)
 
@@ -146,19 +180,77 @@ NOT_COUPON_DEPARTMENTS = COUPON_DEPARTMENTS + PM_LOYALTY_DEPARTMENTS
 
 
 def process_item_lines(
-  group: DataFrame, bulk_rate_data: dict[StoreNum, BulkRateDataType]
+  group: DataFrame,
+  bulk_rate_data: dict[StoreNum, BulkRateDataType],
+  buydowns_data: BuydownsDataType,
+  vap_data: VAPDataType,
 ) -> DataFrame:
-  group = calculate_coupons(group)
+  group = apply_vap(group, vap_data)
+  group = apply_buydowns(group, buydowns_data)
+
+  group = calculate_scanned_coupons(group)
   group = identify_bulk_rates(group, bulk_rate_data)
-
-  group = identify_loyalty(group)
-
   group = identify_multipack(group)
+  group = identify_loyalty(group)
 
   return group
 
 
-def calculate_coupons(group: DataFrame) -> DataFrame:
+def apply_buydowns(group: DataFrame, buydowns_data: BuydownsDataType) -> DataFrame:
+  for index, row in group.iterrows():
+    # lookup the item by State and UPC in the buydowns data
+    state = row[ItemizedInvoiceCols.Store_State]
+    upc = row[ItemizedInvoiceCols.ItemNum]
+
+    buydowns_data_match = buydowns_data.loc[
+      (buydowns_data[GSheetsBuydownsCols.State] == state)
+      & (buydowns_data[GSheetsBuydownsCols.UPC] == upc),
+      :,
+    ]
+
+    if not buydowns_data_match.empty:
+      assert len(buydowns_data_match) == 1
+
+      buydown_row = buydowns_data_match.iloc[0]
+
+      buydown_amt = buydown_row[GSheetsBuydownsCols.Buydown_Amt]
+      buydown_desc = buydown_row[GSheetsBuydownsCols.Buydown_Desc]
+
+      fixed_item_price = row[ItemizedInvoiceCols.Inv_Price] - buydown_amt
+
+      group.loc[index, ItemizedInvoiceCols.Manufacturer_Buydown_Amt] = buydown_amt
+      group.loc[index, ItemizedInvoiceCols.Manufacturer_Buydown_Desc] = buydown_desc
+
+      group.loc[index, ItemizedInvoiceCols.Inv_Price] = fixed_item_price
+
+  return group
+
+
+def apply_vap(group: DataFrame, vap_data: VAPDataType) -> DataFrame:
+  for index, row in group.iterrows():
+    upc = row[ItemizedInvoiceCols.ItemNum]
+
+    vap_data_match = vap_data.loc[vap_data[GSheetsVAPDiscountsCols.UPC] == upc, :]
+
+    if not vap_data_match.empty:
+      assert len(vap_data_match) == 1
+
+      vap_row = vap_data_match.iloc[0]
+
+      vap_amt = vap_row[GSheetsVAPDiscountsCols.Discount_Amt]
+      vap_desc = vap_row[GSheetsVAPDiscountsCols.Discount_Type]
+
+      group.loc[index, ItemizedInvoiceCols.Manufacturer_Discount_Amt] = vap_amt
+      group.loc[index, ItemizedInvoiceCols.Manufacturer_Promo_Desc] = vap_desc
+
+  return group
+
+
+def apply_outlet_promos(group: DataFrame) -> DataFrame:
+  return group
+
+
+def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
   # sourcery skip: extract-method
 
   # grab the dept_id of each row
@@ -203,14 +295,13 @@ def calculate_coupons(group: DataFrame) -> DataFrame:
       invoice_prices, invoice_quantities, biggest_coupon_value
     )
 
+    # TODO update to apply to PID coupon after identifying SCANNED coupons
     group.loc[is_coupon_applicable, ItemizedInvoiceCols.Acct_Promo_Name] = biggest_coupon_name
     group.loc[is_coupon_applicable, ItemizedInvoiceCols.Acct_Discount_Amt] = distributed_discounts
 
   return group
 
 
-# 02848527
-# 78437
 def identify_bulk_rates(
   group: DataFrame, bulk_rate_data: dict[StoreNum, BulkRateDataType]
 ) -> DataFrame:
@@ -245,29 +336,42 @@ def identify_bulk_rates(
   return group
 
 
-mixnmatch_rate_pattern = Template(r"(?P<Quantity>\d+) ${uom}/\$(?P<Price>[\d\.]+)")
+mixnmatch_rate_pattern = Template(r"(?P<Quantity>\d+) ${uom}/\$$(?P<Price>[\d\.]+)")
+
+VALID_MANUFACTURER_MULTIPACK_PATTERNS: dict[tuple[tuple[int, Decimal]], str] = {}
 
 
 def identify_multipack(group: DataFrame):
+  # sourcery skip: move-assign, remove-redundant-if
   for index, row in group.iterrows():
-    pattern = compile(mixnmatch_rate_pattern.substitute(uom=row[ItemizedInvoiceCols.Unit_Type]))
-    if match := pattern.match(row[ItemizedInvoiceCols.MixNMatchRate]):
-      multipack_quantity = int(match["Quantity"])
-      multipack_price = Decimal(match["Price"])
+    if mixnmatchrate := row[ItemizedInvoiceCols.MixNMatchRate]:
+      uom = row[ItemizedInvoiceCols.Unit_Type] or ""
+      if isna(uom):
+        uom = ""
+      pattern = compile(mixnmatch_rate_pattern.substitute(uom=uom))
+      if match := pattern.match(mixnmatchrate):
+        multipack_quantity = int(match["Quantity"])
+        multipack_price = Decimal(match["Price"])
 
-      multipack_price_per_item = multipack_price / multipack_quantity
+        multipack_price_per_item = multipack_price / multipack_quantity
 
-      discount_per_item = row[ItemizedInvoiceCols.Inv_Price] - multipack_price_per_item
+        discount_per_item = row[ItemizedInvoiceCols.Inv_Price] - multipack_price_per_item
 
-      # TODO check if this mix n match is a manufacturer multipack or a retailer multipack
-      if True:
-        # group.loc[index, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = ...
-        group.loc[index, ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt] = (
-          discount_per_item
-        )
-        group.loc[index, ItemizedInvoiceCols.Manufacturer_Multipack_Quantity] = multipack_quantity
+        # TODO check if this mix n match is a manufacturer multipack or a retailer multipack
+        if multipack_desc := VALID_MANUFACTURER_MULTIPACK_PATTERNS.get(
+          (multipack_quantity, multipack_price)
+        ):
+          disc_amt_set_field = ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt
+          multi_quantity_set_field = ItemizedInvoiceCols.Manufacturer_Multipack_Quantity
+          group.loc[index, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = multipack_desc
+        else:
+          disc_amt_set_field = ItemizedInvoiceCols.Retail_Multipack_Disc_Amt
+          multi_quantity_set_field = ItemizedInvoiceCols.Retail_Multipack_Quantity
 
-  pass
+        group.loc[index, disc_amt_set_field] = discount_per_item
+        group.loc[index, multi_quantity_set_field] = multipack_quantity
+
+  return group
 
 
 def identify_loyalty(group: DataFrame) -> DataFrame:

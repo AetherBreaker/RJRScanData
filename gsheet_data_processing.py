@@ -8,14 +8,13 @@ from logging import getLogger
 from pathlib import Path
 from typing import Optional
 
+from dataframe_transformations import apply_model_to_df
+from dataframe_utils import NULL_VALUES
 from gspread import service_account
 from gspread.http_client import BackOffHTTPClient
 from gspread.utils import ValueRenderOption, to_records
 from gspread.worksheet import Worksheet
 from pandas import DataFrame
-
-from dataframe_transformations import apply_model_to_df
-from dataframe_utils import NULL_VALUES
 from types_column_names import (
   GSheetsBuydownsCols,
   GSheetsStoreInfoCols,
@@ -24,7 +23,12 @@ from types_column_names import (
 )
 from types_custom import AddressInfoType, BuydownsDataType, UnitOfMeasureDataType, VAPDataType
 from utils import SingletonType
-from validation_other import BuydownsModel, StoreInfoModel, UnitsOfMeasureModel, VAPDiscountsModel
+from validation_gsheetdata import (
+  BuydownsModel,
+  StoreInfoModel,
+  UnitsOfMeasureModel,
+  VAPDiscountsModel,
+)
 
 logger = getLogger(__name__)
 
@@ -111,23 +115,16 @@ class SheetCache(metaclass=SingletonType):
     vap = vap.replace(NULL_VALUES, value=None)
     uom = uom.replace(NULL_VALUES, value=None)
 
-    info: AddressInfoType = info.apply(
-      apply_model_to_df, model=StoreInfoModel, axis=1, result_type="broadcast"
-    )
-    bds: BuydownsDataType = bds.apply(
-      apply_model_to_df, model=BuydownsModel, axis=1, result_type="broadcast"
-    )
-    vap: VAPDataType = vap.apply(
-      apply_model_to_df, model=VAPDiscountsModel, axis=1, result_type="broadcast"
-    )
-    uom: UnitOfMeasureDataType = uom.apply(
-      apply_model_to_df, model=UnitsOfMeasureModel, axis=1, result_type="broadcast"
-    )
+    info = info.apply(apply_model_to_df, model=StoreInfoModel, axis=1, result_type="broadcast")
+    bds = bds.apply(apply_model_to_df, model=BuydownsModel, axis=1, result_type="broadcast")
+    vap = vap.apply(apply_model_to_df, model=VAPDiscountsModel, axis=1, result_type="broadcast")
+    uom = uom.apply(apply_model_to_df, model=UnitsOfMeasureModel, axis=1, result_type="broadcast")
 
-    self.info = info.set_index(GSheetsStoreInfoCols.StoreNum)
-    self.bds = bds.set_index(GSheetsBuydownsCols.UPC)
-    self.vap = vap.set_index(GSheetsVAPDiscountsCols.UPC)
-    self.uom = uom.set_index(GSheetsUnitsOfMeasureCols.UPC)
+    self.info: AddressInfoType = info.set_index(GSheetsStoreInfoCols.StoreNum)
+    # self.bds = bds.set_index(GSheetsBuydownsCols.UPC)
+    self.bds: BuydownsDataType = bds
+    self.vap: VAPDataType = vap.set_index(GSheetsVAPDiscountsCols.UPC)
+    self.uom: UnitOfMeasureDataType = uom.set_index(GSheetsUnitsOfMeasureCols.UPC)
 
 
 if __name__ == "__main__":

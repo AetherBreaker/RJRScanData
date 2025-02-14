@@ -9,8 +9,12 @@ from decimal import Decimal
 from logging import getLogger
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Any, Literal
 
+from dataframe_transformations import apply_addrinfo_and_initial_validation, apply_model_to_df
+from dataframe_utils import NULL_VALUES
+from gsheet_data_processing import SheetCache
+from logging_config import rich_console
 from pandas import DataFrame, concat
 from pyodbc import Connection, Error, OperationalError, connect
 from rich.progress import (
@@ -20,10 +24,6 @@ from rich.progress import (
   TaskProgressColumn,
   TextColumn,
 )
-
-from dataframe_transformations import apply_addrinfo_and_initial_validation, apply_model_to_df
-from dataframe_utils import NULL_VALUES
-from logging_config import rich_console
 from sql_query_builders import (
   update_database_name,
 )
@@ -40,7 +40,8 @@ from types_custom import (
   StoreScanData,
 )
 from utils import cached_for_testing, convert_storenum_to_str, taskgen_whencalled
-from validation_other import BulkRateModel, ItemizedInvoiceModel
+from validation_itemizedinvoice import ItemizedInvoiceModel
+from validation_other import BulkRateModel
 
 logger = getLogger(__name__)
 
@@ -72,9 +73,9 @@ def load_sql_creds(sql_driver: str = SQL_DRIVER_DEFAULT) -> SQLCreds:
 
 
 SQL_HOSTNAME_METHOD_DEFAULT: Literal["DNS", "IP"] = 0
-SQL_HOSTNAME_METHODS = ["DNS", "IP"]
+SQL_HOSTNAME_METHODS = ("DNS", "IP")
 
-TAILSCALE_HOSTNAME_PATTERN = "sft{storenum:0>3}.woodpecker-roach.ts.net"
+TAILSCALE_HOSTNAME_PATTERN = "pos-sft{storenum:0>3}.salamander-nunki.ts.net"
 TAILSCALE_IP_ADDRESS_LOOKUP_JSON = (CWD / __file__).with_name("store_ip_address_lookup.json")
 
 
@@ -218,8 +219,8 @@ def get_store_data(
   pbar: Progress,
   storenum: StoreNum,
   addr_info: AddressInfoType,
-  errors: list,
   queries: QueryDict,
+  errors: dict[int, list[Any]] = None,
 ) -> StoreScanData:
   try:
     results = query_store(storenum, queries)
@@ -318,7 +319,7 @@ TEMP_STORES_LIST = [1, 3, 8, 9, 16, 17, 19, 29, 42]
 def query_all_stores_multithreaded(
   queries: QueryDict,
   addr_info: AddressInfoType,
-  errors: list,
+  errors: dict[int, list[Any]],
   storenums: list[StoreNum] = TEMP_STORES_LIST,
 ) -> ScanDataPackage:
   store_querying_futures: list[Future] = []
@@ -341,8 +342,8 @@ def query_all_stores_multithreaded(
           pbar=pbar,
           storenum=storenum,
           addr_info=addr_info,
-          errors=errors,
           queries=queries,
+          errors=errors,
         )
         for storenum in storenums
       )
@@ -392,4 +393,20 @@ if __name__ == "__main__":
     "bulk_rate_data": build_bulk_info_query(),
     "itemized_invoice_data": build_itemized_invoice_query(start_date, last_sun),
   }
-  get_store_data(1, queries)
+
+  sheet_data = SheetCache()
+
+  with Progress(
+    BarColumn(),
+    TaskProgressColumn(),
+    MofNCompleteColumn(),
+    TextColumn("[progress.description]{task.description}"),
+    console=rich_console,
+  ) as pbar:
+    get_store_data(
+      pbar=pbar,
+      storenum=1,
+      addr_info=sheet_data.info,
+      queries=queries,
+      errors=None,
+    )

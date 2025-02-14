@@ -1,9 +1,16 @@
+if __name__ == "__main__":
+  from logging_config import configure_logging
+
+  configure_logging()
+
 from decimal import Decimal
+from logging import getLogger
 
 from pandas import DataFrame, Index, Series
-
 from types_column_names import ItemizedInvoiceCols
 from utils import truncate_decimal
+
+logger = getLogger(__name__)
 
 NULL_VALUES = ["NULL", "", " ", float("nan")]
 

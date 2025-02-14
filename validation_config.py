@@ -3,7 +3,6 @@ if __name__ == "__main__":
 
   configure_logging()
 
-from decimal import Decimal
 from logging import getLogger
 from typing import Any, Self
 
@@ -41,23 +40,16 @@ class CustomBaseModel(BaseModel):
     except Exception as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
 
-      if (
-        info.field_name != "Dept_ID"
-        and info.field_name != "Quantity"
-        and not isinstance(data, Decimal)
-      ):
-        pass
-
+      # if the exception is a ValidationError...
+      if isinstance(e, ValidationError):
+        if isinstance(row_errs := info.context.get("row_err"), dict):
+          row_errs[info.field_name] = (data, e)
+      else:
         logger.error(
           f"Error validating {info.field_name} in {cls.__name__}: {e}",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
-        if errors := info.context.get("errors"):
-          errors.append(e)
-
-        if row_errs := info.context.get("row_err"):
-          row_errs[info.field_name] = e
 
     return results or data
 

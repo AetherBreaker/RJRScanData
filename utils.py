@@ -22,7 +22,6 @@ from typing import Any, Callable, Sequence
 from dateutil.relativedelta import SA, SU, relativedelta
 from numpy import nan
 from rich.progress import Progress, TaskID
-
 from types_custom import StoreNum
 
 logger = getLogger(__name__)
@@ -235,3 +234,43 @@ def convert_str_to_storenum(storenum: str) -> int:
     return int(matches.group("StoreNum"))
   else:
     raise ValueError(f"Invalid Store Number: {storenum}")
+
+
+def upce_to_upca(upce):
+  """Test value 04182635 -> 041800000265"""
+  if len(upce) == 6:
+    middle_digits = upce  # assume we're getting just middle 6 digits
+  elif len(upce) == 7:
+    # truncate last digit, assume it is just check digit
+    middle_digits = upce[:6]
+  elif len(upce) == 8:
+    # truncate first and last digit,
+    # assume first digit is number system digit
+    # last digit is check digit
+    middle_digits = upce[1:7]
+  else:
+    return False
+  d1, d2, d3, d4, d5, d6 = list(middle_digits)
+  if d6 in ["0", "1", "2"]:
+    mfrnum = d1 + d2 + d6 + "00"
+    itemnum = f"00{d3}{d4}{d5}"
+  elif d6 == "3":
+    mfrnum = d1 + d2 + d3 + "00"
+    itemnum = f"000{d4}{d5}"
+  elif d6 == "4":
+    mfrnum = d1 + d2 + d3 + d4 + "0"
+    itemnum = f"0000{d5}"
+  else:
+    mfrnum = d1 + d2 + d3 + d4 + d5
+    itemnum = f"0000{d6}"
+  newmsg = f"0{mfrnum}{itemnum}"
+  # calculate check digit, they are the same for both UPCA and UPCE
+  check_digit = 0
+  odd_pos = True
+  for char in str(newmsg)[::-1]:
+    check_digit += int(char) * 3 if odd_pos else int(char)
+    odd_pos = not odd_pos  # alternate
+  check_digit = check_digit % 10
+  check_digit = 10 - check_digit
+  check_digit = check_digit % 10
+  return newmsg + str(check_digit)

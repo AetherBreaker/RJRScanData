@@ -5,9 +5,10 @@ if __name__ == "__main__":
 
 from enum import Enum, auto
 from logging import getLogger
-from typing import Literal, NamedTuple, Optional, TypedDict
+from typing import Any, Callable, Literal, NamedTuple, Optional, TypedDict
 
 from pandas import DataFrame
+from pydantic import ValidationError
 from pyodbc import Row
 from pypika.queries import QueryBuilder
 
@@ -193,6 +194,19 @@ class SQLCreds(TypedDict):
 class ScanDataPackage(TypedDict):
   bulk_data: dict[StoreNum, BulkRateDataType]
   itemized_invoice_data: ItemizedInvoiceDataType
+
+
+class ModelContextType(TypedDict):
+  row_err: dict[str, "ValidationErrPackage"]
+  skip_fields: dict[str, Callable | None]
+  store_num: StoreNum
+  input: dict[str, Any]
+  row_id: int
+
+
+class ValidationErrPackage(NamedTuple):
+  field_value: Any
+  err: ValidationError
 
 
 class StoreScanData(NamedTuple):
