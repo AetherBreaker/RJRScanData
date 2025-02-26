@@ -5,7 +5,7 @@ if __name__ == "__main__":
 
 import pickle
 import sys
-from datetime import date, datetime
+from datetime import date
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from ftplib import FTP
 from functools import wraps
