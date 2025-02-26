@@ -165,6 +165,7 @@ class ItemizedInvoiceCols(ColNameEnum):
     "Inv_Cost",
     "Inv_Price",
     "Inv_Retail_Price",
+    "Coupon_Flat_Percent",
     "origPricePer",
     "MixNMatchRate",
     "SalePricePer",
@@ -193,6 +194,7 @@ class ItemizedInvoiceCols(ColNameEnum):
   Inv_Cost = auto()
   Inv_Price = auto()
   Inv_Retail_Price = auto()
+  Coupon_Flat_Percent = auto()
   # Store_ID = auto()
   origPricePer = auto()
   MixNMatchRate = auto()

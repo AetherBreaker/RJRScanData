@@ -5,6 +5,7 @@ pydantic
 pyinstaller
 pyodbc
 PyPika
+python-dateutil
 pytz
 rich
 SQLAlchemy

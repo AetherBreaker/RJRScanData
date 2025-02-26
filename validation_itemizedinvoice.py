@@ -6,7 +6,7 @@ if __name__ == "__main__":
 from datetime import datetime
 from decimal import Decimal
 from logging import getLogger
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BeforeValidator, Field
 from types_custom import DeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
@@ -19,7 +19,7 @@ logger = getLogger(__name__)
 
 class ItemizedInvoiceModel(CustomBaseModel):
   Invoice_Number: int
-  CustNum: Annotated[str, Field(pattern=r"[\w\d]+")]
+  CustNum: Annotated[str, Field(pattern=r"[0-9a-zA-Z]+")]
   Phone_1: Annotated[Optional[int], BeforeValidator(strip_string_to_digits)]
   AgeVerificationMethod: str
   AgeVerification: str
@@ -40,6 +40,7 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Inv_Cost: Annotated[Decimal, AfterValidator(truncate_decimal)]
   Inv_Price: Annotated[Decimal, AfterValidator(truncate_decimal), AfterValidator(abs_decimal)]
   Inv_Retail_Price: Annotated[Decimal, AfterValidator(truncate_decimal)]
+  Coupon_Flat_Percent: Optional[Literal[0, 1]]
   origPricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
   MixNMatchRate: Optional[str]
   SalePricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]

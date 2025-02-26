@@ -81,7 +81,7 @@ def report_errors(context: ModelContextType):
       if not cond:
         match field_name:
           case "CustNum":
-            employee_id = context["input"][ItemizedInvoiceCols.Cashier_ID]
+            employee_id = int(context["input"][ItemizedInvoiceCols.Cashier_ID])
             infraction_date = context["input"][ItemizedInvoiceCols.DateTime]
             # check if the empoyee id is in the lazy employees index
 
@@ -89,7 +89,6 @@ def report_errors(context: ModelContextType):
               last_infaction_date = lazy_employees.loc[
                 employee_id, LazyEmployeesCols.LastInfractionDate
               ]
-
               lazy_employees.loc[employee_id, LazyEmployeesCols.InfractionCount] += 1
               if infraction_date > last_infaction_date:
                 lazy_employees.loc[employee_id, LazyEmployeesCols.LastInfractionDate] = (
@@ -104,5 +103,10 @@ def report_errors(context: ModelContextType):
               }
 
           case _:
-            ...
+            exc_type, exc_val, exc_tb = type(err), err, err.__traceback__
+            logger.error(
+              f"Error validating {field_name} in {context['model'].__name__}: {err}",
+              exc_info=(exc_type, exc_val, exc_tb),
+              stack_info=True,
+            )
   pass

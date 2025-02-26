@@ -123,7 +123,8 @@ class SheetCache(metaclass=SingletonType):
     self.info: AddressInfoType = info.set_index(GSheetsStoreInfoCols.StoreNum)
     # self.bds = bds.set_index(GSheetsBuydownsCols.UPC)
     self.bds: BuydownsDataType = bds
-    self.vap: VAPDataType = vap.set_index(GSheetsVAPDiscountsCols.UPC)
+    # self.vap: VAPDataType = vap.set_index(GSheetsVAPDiscountsCols.UPC)
+    self.vap: VAPDataType = vap
     self.uom: UnitOfMeasureDataType = uom.set_index(GSheetsUnitsOfMeasureCols.UPC)
 
 

@@ -8,10 +8,9 @@ from logging import getLogger
 from typing import Any, Callable, Literal, NamedTuple, Optional, TypedDict
 
 from pandas import DataFrame
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 from pyodbc import Row
 from pypika.queries import QueryBuilder
-
 from types_column_names import ColNameEnum
 
 logger = getLogger(__name__)
@@ -86,6 +85,60 @@ class DeptIDsEnum(ColNameEnum):
     "VapeLiq",
     "Zippo",
   ]
+  __rjr_include__ = [
+    "BDsBrand",
+    "BDsLine",
+    "BDsMisc",
+    "BagTob",
+    "ChewHelx",
+    "ChewUSST",
+    "Chews",
+    "Chews18",
+    "CigTube",
+    "Cigar",
+    "Cigs",
+    "CigsMarl",
+    "Coupon$",
+    "Dispos",
+    "FGIDisc",
+    "HookaTob",
+    "Hookahs",
+    "PMCOUPON",
+    "PMPromos",
+    "PreHerb",
+    "PreNJOY",
+    "Prefills",
+    "PromosLT",
+    "PromosST",
+    "T18Wrap",
+    "T21JMC",
+    "T21LCig",
+    "T21Wrap",
+    "VAPBOGO",
+    "VAPBTGO",
+    "VAPFlat",
+    "VapeLiq",
+  ]
+  __pm_include__ = [
+    "BDsBrand",
+    "BDsLine",
+    "BDsMisc",
+    "ChewHelx",
+    "ChewUSST",
+    "Cigs",
+    "CigsMarl",
+    "Coupon$",
+    "FGIDisc",
+    "PMCOUPON",
+    "PMPromos",
+    "PreNJOY",
+    "PromosLT",
+    "PromosST",
+    "T21JMC",
+    "VAPBOGO",
+    "VAPBTGO",
+    "VAPFlat",
+  ]
   BDsBrand = auto()
   BDsLine = auto()
   BDsMisc = auto()
@@ -153,6 +206,14 @@ class DeptIDsEnum(ColNameEnum):
   VapeLiq = auto()
   Zippo = auto()
 
+  @classmethod
+  def rjr_depts(cls) -> set[str]:
+    return set(cls.__rjr_include__)
+
+  @classmethod
+  def pm_depts(cls) -> set[str]:
+    return set(cls.__pm_include__)
+
 
 type StoreNum = int
 
@@ -202,6 +263,7 @@ class ModelContextType(TypedDict):
   store_num: StoreNum
   input: dict[str, Any]
   row_id: int
+  model: BaseModel
 
 
 class ValidationErrPackage(NamedTuple):

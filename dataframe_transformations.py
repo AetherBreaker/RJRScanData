@@ -9,9 +9,10 @@ from re import compile
 from string import Template
 from typing import Any, Callable, Type
 
-from dataframe_utils import combine_same_coupons, distribute_discount
-from pandas import DataFrame, Series, isna
+from dataframe_utils import NULL_VALUES, combine_same_coupons, distribute_discount, fix_decimals
+from pandas import DataFrame, Series, concat, isna
 from reporting_validation_errs import report_errors
+from rich.progress import Progress
 from types_column_names import (
   BulkRateCols,
   GSheetsBuydownsCols,
@@ -22,11 +23,16 @@ from types_custom import (
   AddressInfoType,
   BulkRateDataType,
   BuydownsDataType,
+  DeptIDsEnum,
   ModelContextType,
   StoreNum,
+  StoreScanData,
   VAPDataType,
 )
+from utils import convert_storenum_to_str, taskgen_whencalled
 from validation_config import CustomBaseModel
+from validation_itemizedinvoice import ItemizedInvoiceModel
+from validation_other import BulkRateModel
 
 logger = getLogger(__name__)
 
@@ -34,6 +40,21 @@ logger = getLogger(__name__)
 base_context: ModelContextType = {
   "skip_fields": {"Dept_ID": None, "Quantity": None},
 }
+
+
+COUPON_DEPARTMENTS = ["Coupon$", "PMPromos", "PromosLT", "PromosST"]
+PM_LOYALTY_DEPARTMENTS = ["PMCOUPON"]
+PM_LOYALTY_APPLICABLE_DEPARTMENTS = ["CigsMarl"]
+
+NOT_COUPON_DEPARTMENTS = COUPON_DEPARTMENTS + PM_LOYALTY_DEPARTMENTS
+
+mixnmatch_rate_pattern = Template(r"(?P<Quantity>\d+) ${uom}/\$$(?P<Price>[\d\.]+)")
+
+VALID_MANUFACTURER_MULTIPACK_PATTERNS: dict[tuple[tuple[int, Decimal]], str] = {}
+
+rjr_depts = DeptIDsEnum.rjr_depts()
+pm_depts = DeptIDsEnum.pm_depts()
+scan_depts = rjr_depts.union(pm_depts)
 
 
 def context_setup(func: Callable) -> Callable:
@@ -94,6 +115,8 @@ def apply_model_to_df_transforming(
   :return: The transformed row.
   """
 
+  context["model"] = model
+
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
@@ -122,6 +145,9 @@ def apply_model_to_df(
   :param model: The model to apply.
   :return: The transformed row.
   """
+
+  context["model"] = model
+
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
@@ -131,6 +157,97 @@ def apply_model_to_df(
   row.update(model_dict)
 
   return row
+
+
+def first_validation_pass(
+  pbar: Progress,
+  data: StoreScanData,
+  addr_info: AddressInfoType,
+  errors: dict[int, list[Any]] = None,
+) -> StoreScanData:
+  storenum = data.storenum
+  bulk_rate_data = data.bulk_rate_data
+  itemized_invoice_data = data.itemized_invoice_data
+
+  itemized_invoice_data[ItemizedInvoiceCols.Store_Number] = storenum
+  itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
+
+  # filter itemized invoices down to only RJR and PM departments
+  itemized_invoice_data = itemized_invoice_data[
+    itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(scan_depts)
+  ]
+
+  # bulk_rate_data = bulk_rate_data.map(fillnas)
+  # itemized_invoice_data = itemized_invoice_data.map(fillnas)
+
+  # bulk_rate_data = bulk_rate_data.map(fix_str_decimals)
+  # itemized_invoice_data = itemized_invoice_data.map(fix_str_decimals)
+
+  bulk_rate_data = bulk_rate_data.map(fix_decimals)
+  itemized_invoice_data = itemized_invoice_data.map(fix_decimals)
+
+  itemized_invoice_data = itemized_invoice_data.astype(object)
+
+  bulk_rate_data = bulk_rate_data.replace(NULL_VALUES, value=None)
+  itemized_invoice_data = itemized_invoice_data.replace(NULL_VALUES, value=None)
+
+  itemized_invoice_data.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
+
+  # bulk_rate_data.to_csv(f"bulk_rate_data_{storenum}.csv", index=False)
+  # itemized_invoice_data.to_csv(f"itemized_invoice_data_{storenum}.csv", index=False)
+
+  bulk_rate_data = bulk_rate_data.apply(
+    taskgen_whencalled(
+      pbar,
+      description=f"Validating {storenum:0>3} bulk rates",
+      total=len(bulk_rate_data),
+      clear_when_finished=True,
+    )(apply_model_to_df)(),
+    model=BulkRateModel,
+    axis=1,
+    result_type="broadcast",
+  )
+  logger.info(
+    f"SFT {storenum:0>3}: [bold orange_red1]Finished[/] validating bulk rates",
+    extra={"markup": True},
+  )
+
+  series_to_concat = []
+
+  itemized_invoice_data.apply(
+    taskgen_whencalled(
+      pbar,
+      description=f"Validating {storenum:0>3} itemized invoices",
+      total=len(itemized_invoice_data),
+      clear_when_finished=True,
+    )(apply_addrinfo_and_initial_validation)(),
+    axis=1,
+    model=ItemizedInvoiceModel,
+    errors=errors,
+    new_rows=series_to_concat,
+    addr_data=addr_info,
+  )
+  logger.info(
+    f"SFT {storenum:0>3}: [bold yellow]Finished[/] validating itemized invoices",
+    extra={"markup": True},
+  )
+
+  itemized_invoice_data = concat(series_to_concat, axis=1).T
+
+  itemized_invoice_data = itemized_invoice_data[
+    itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(DeptIDsEnum.all_columns())
+  ]
+
+  logger.info(
+    f"SFT {storenum:0>3}: [bold bright_green]Finished[/] first validation pass",
+    extra={"markup": True},
+  )
+
+  return StoreScanData(
+    storenum=storenum,
+    bulk_rate_data=bulk_rate_data,
+    itemized_invoice_data=itemized_invoice_data,
+  )
 
 
 @context_setup
@@ -150,6 +267,8 @@ def apply_addrinfo_and_initial_validation(
   :param model: The model to apply.
   :return: The transformed row.
   """
+
+  context["model"] = model
 
   address_info = addr_data.loc[context["store_num"]].to_dict()
 
@@ -172,13 +291,6 @@ def apply_addrinfo_and_initial_validation(
   return row
 
 
-COUPON_DEPARTMENTS = ["Coupon$", "PMPromos", "PromosLT", "PromosST"]
-PM_LOYALTY_DEPARTMENTS = ["PMCOUPON"]
-PM_LOYALTY_APPLICABLE_DEPARTMENTS = ["CigsMarl"]
-
-NOT_COUPON_DEPARTMENTS = COUPON_DEPARTMENTS + PM_LOYALTY_DEPARTMENTS
-
-
 def process_item_lines(
   group: DataFrame,
   bulk_rate_data: dict[StoreNum, BulkRateDataType],
@@ -192,36 +304,6 @@ def process_item_lines(
   group = identify_bulk_rates(group, bulk_rate_data)
   group = identify_multipack(group)
   group = identify_loyalty(group)
-
-  return group
-
-
-def apply_buydowns(group: DataFrame, buydowns_data: BuydownsDataType) -> DataFrame:
-  for index, row in group.iterrows():
-    # lookup the item by State and UPC in the buydowns data
-    state = row[ItemizedInvoiceCols.Store_State]
-    upc = row[ItemizedInvoiceCols.ItemNum]
-
-    buydowns_data_match = buydowns_data.loc[
-      (buydowns_data[GSheetsBuydownsCols.State] == state)
-      & (buydowns_data[GSheetsBuydownsCols.UPC] == upc),
-      :,
-    ]
-
-    if not buydowns_data_match.empty:
-      assert len(buydowns_data_match) == 1
-
-      buydown_row = buydowns_data_match.iloc[0]
-
-      buydown_amt = buydown_row[GSheetsBuydownsCols.Buydown_Amt]
-      buydown_desc = buydown_row[GSheetsBuydownsCols.Buydown_Desc]
-
-      fixed_item_price = row[ItemizedInvoiceCols.Inv_Price] - buydown_amt
-
-      group.loc[index, ItemizedInvoiceCols.Manufacturer_Buydown_Amt] = buydown_amt
-      group.loc[index, ItemizedInvoiceCols.Manufacturer_Buydown_Desc] = buydown_desc
-
-      group.loc[index, ItemizedInvoiceCols.Inv_Price] = fixed_item_price
 
   return group
 
@@ -246,7 +328,35 @@ def apply_vap(group: DataFrame, vap_data: VAPDataType) -> DataFrame:
   return group
 
 
-def apply_outlet_promos(group: DataFrame) -> DataFrame:
+def apply_buydowns(group: DataFrame, buydowns_data: BuydownsDataType) -> DataFrame:
+  for index, row in group.iterrows():
+    # lookup the item by State and UPC in the buydowns data
+    state = row[ItemizedInvoiceCols.Store_State]
+    upc = row[ItemizedInvoiceCols.ItemNum]
+
+    buydowns_data_match = buydowns_data.loc[
+      (buydowns_data[GSheetsBuydownsCols.State] == state)
+      & (buydowns_data[GSheetsBuydownsCols.UPC] == upc),
+      :,
+    ]
+
+    if not buydowns_data_match.empty:
+      assert len(buydowns_data_match) == 1
+
+      buydown_row = buydowns_data_match.iloc[0]
+
+      buydown_amt = buydown_row[GSheetsBuydownsCols.Buydown_Amt]
+
+      if buydown_amt is not None:
+        buydown_desc = buydown_row[GSheetsBuydownsCols.Buydown_Desc]
+
+        fixed_item_price = row[ItemizedInvoiceCols.Inv_Price] + buydown_amt
+
+        group.loc[index, ItemizedInvoiceCols.Manufacturer_Buydown_Amt] = buydown_amt
+        group.loc[index, ItemizedInvoiceCols.Manufacturer_Buydown_Desc] = buydown_desc
+
+        group.loc[index, ItemizedInvoiceCols.Inv_Price] = fixed_item_price
+
   return group
 
 
@@ -291,6 +401,8 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
     invoice_prices = group.loc[is_coupon_applicable, ItemizedInvoiceCols.Inv_Price]
     invoice_quantities = group.loc[is_coupon_applicable, ItemizedInvoiceCols.Quantity]
 
+    # TODO account for percentage discounts
+
     distributed_discounts = distribute_discount(
       invoice_prices, invoice_quantities, biggest_coupon_value
     )
@@ -334,11 +446,6 @@ def identify_bulk_rates(
         group.loc[index, ItemizedInvoiceCols.Retail_Multipack_Quantity] = bulk_quan
 
   return group
-
-
-mixnmatch_rate_pattern = Template(r"(?P<Quantity>\d+) ${uom}/\$$(?P<Price>[\d\.]+)")
-
-VALID_MANUFACTURER_MULTIPACK_PATTERNS: dict[tuple[tuple[int, Decimal]], str] = {}
 
 
 def identify_multipack(group: DataFrame):
@@ -424,3 +531,8 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
     )
 
   return group
+
+
+# TODO
+def apply_outlet_promos(group: DataFrame) -> DataFrame:
+  raise NotImplementedError

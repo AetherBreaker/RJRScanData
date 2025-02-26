@@ -209,8 +209,8 @@ pip-selfcheck.json
 /_testing_pickles
 Test Scan Files/
 Test Scan Files/*
-daily_logs/
-daily_logs/*
-02-01 Scan Data/
-02-01 Scan Data/*
-/SFT02920250208.txt
+logs/
+logs/*
+Validation Reports/
+Validation Reports/*
+/max_width.txt

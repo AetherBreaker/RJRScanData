@@ -5,18 +5,15 @@ if __name__ == "__main__":
 
 import json
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from decimal import Decimal
 from logging import getLogger
 from pathlib import Path
 from threading import Lock
-from typing import Any, Literal
+from typing import Literal
 
-from dataframe_transformations import apply_addrinfo_and_initial_validation, apply_model_to_df
-from dataframe_utils import NULL_VALUES
-from gsheet_data_processing import SheetCache
 from logging_config import rich_console
-from pandas import DataFrame, concat
+from pandas import DataFrame
 from pyodbc import Connection, Error, OperationalError, connect
+from rich.live import Live
 from rich.progress import (
   BarColumn,
   MofNCompleteColumn,
@@ -24,24 +21,20 @@ from rich.progress import (
   TaskProgressColumn,
   TextColumn,
 )
+from rich.table import Table
 from sql_query_builders import (
   update_database_name,
 )
 from types_column_names import BulkRateCols, ItemizedInvoiceCols
 from types_custom import (
-  AddressInfoType,
-  DeptIDsEnum,
   QueryDict,
   QueryResultsDict,
-  ScanDataPackage,
   SQLCreds,
   SQLHostName,
   StoreNum,
   StoreScanData,
 )
-from utils import cached_for_testing, convert_storenum_to_str, taskgen_whencalled
-from validation_itemizedinvoice import ItemizedInvoiceModel
-from validation_other import BulkRateModel
+from utils import TableColumn, cached_for_testing
 
 logger = getLogger(__name__)
 
@@ -89,13 +82,16 @@ def get_store_sql_hostname(
     case "IP":
       with TAILSCALE_IP_ADDRESS_LOOKUP_JSON.open("r") as file:
         ip_address_lookup = json.load(file)
+        if str(storenum) not in ip_address_lookup:
+          raise ValueError(f"Store {storenum} IP address not found in lookup table")
       return ip_address_lookup[str(storenum)]
 
 
 class StoreSQLConn:
   _conn_string_template = (
     "DRIVER={driver};"
-    "SERVER={hostname},1433;"
+    "SERVER={hostname};"
+    # "SERVER={hostname},1433;"
     "UID={uid};"
     "PWD={pwd};"
     "TrustServerCertificate=yes;"
@@ -116,7 +112,7 @@ class StoreSQLConn:
           pwd=self.cred_data["PWD"],
         ),
         readonly=True,
-        timeout=5,
+        timeout=10,
       )
 
       if conn is None:
@@ -128,11 +124,14 @@ class StoreSQLConn:
       sqlstate = exc_val.args[0]
       if (exc_type is OperationalError and sqlstate == "08001") or exc_type is NoConnectionError:
         logger.debug(
-          f"Connection to store {self.storenum} SQL server timed out",
+          f"SFT {self.storenum}: Connection to store  SQL server timed out",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
-        self.hostname = get_store_sql_hostname(self.storenum, hostname_lookup_method="IP")
+        try:
+          self.hostname = get_store_sql_hostname(self.storenum, hostname_lookup_method="IP")
+        except ValueError as exc:
+          raise NoConnectionError(f"Failed to connect to store {self.storenum} SQL server") from exc
         try:
           conn = connect(
             self._conn_string_template.format(
@@ -142,10 +141,10 @@ class StoreSQLConn:
               pwd=self.cred_data["PWD"],
             ),
             readonly=True,
-            timeout=5,
+            timeout=10,
           )
         except Exception as e:
-          raise NoConnectionError(f"Failed to connect to store {self.storenum} SQL server") from e
+          raise e
 
     return conn
 
@@ -163,24 +162,24 @@ class StoreSQLConn:
       if issubclass(exc_type, Error):
         sqlstate = exc_val.args[0]
         if exc_type is OperationalError and sqlstate == "08001":
-          logger.debug(f"Connection to store {self.storenum} SQL server timed out")
+          logger.debug(f"SFT {self.storenum}: Connection to store SQL server timed out")
         else:
           logger.error(
-            f"Failed to connect to store {self.storenum} SQL server",
+            f"SFT {self.storenum}: Failed to connect to store SQL server",
             exc_info=(exc_type, exc_val, exc_tb),
             stack_info=True,
           )
         return True
       elif exc_type is NoConnectionError:
         logger.error(
-          f"Failed to connect to store {self.storenum} SQL server",
+          f"SFT {self.storenum}: Failed to connect to store SQL server",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
         return True
       else:
         logger.error(
-          f"An unexpected exception occurred while connecting to store {self.storenum} SQL server",
+          f"SFT {self.storenum}: An unexpected exception occurred while connecting to store SQL server",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
@@ -192,7 +191,7 @@ class StoreSQLConn:
 _QUERY_THREADING_LOCK = Lock()
 
 
-@cached_for_testing
+# @cached_for_testing
 def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsDict:
   static_queries = {}
   results: QueryResultsDict = {}
@@ -211,32 +210,56 @@ def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsDict:
   return results
 
 
-def fix_decimals(x: Decimal) -> Decimal:
-  return Decimal("0.00") if isinstance(x, Decimal) and str(x) == "0E-8" else x
-
-
 def get_store_data(
-  pbar: Progress,
   storenum: StoreNum,
-  addr_info: AddressInfoType,
   queries: QueryDict,
-  errors: dict[int, list[Any]] = None,
 ) -> StoreScanData:
+  logger.info(
+    f"SFT {storenum:0>3}: [bold blue]Started[/] querying store for scan data",
+    extra={"markup": True},
+  )
   try:
     results = query_store(storenum, queries)
     bulk_rate_raw = results["bulk_rate_data"]
     itemized_invoice_raw = results["itemized_invoice_data"]
-    logger.info(f"Finished querying store {storenum:0>3}")
+    logger.debug(f"SFT {storenum:0>3}: Finished querying store")
   except NoConnectionError:
-    logger.warning(f"Failed to connect to store {storenum} SQL server")
+    logger.warning(f"SFT {storenum:0>3}: Failed to connect to store SQL server")
     return StoreScanData(storenum=storenum)
 
   except Exception as e:
-    logger.error(
-      f"An exception occurred while querying store {storenum}",
-      exc_info=(type(e), e, e.__traceback__),
-      stack_info=True,
-    )
+    exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
+    # logger.error(
+    #   f"SFT {storenum:0>3}: An exception occurred while querying store",
+    #   exc_info=(type(e), e, e.__traceback__),
+    #   stack_info=True,
+    # )
+    if exc_type is not None:
+      # if exc_type inhereits from Error or is Error
+      if issubclass(exc_type, Error):
+        sqlstate = exc_val.args[0]
+        if exc_type is OperationalError and sqlstate == "08001":
+          logger.debug(f"SFT {storenum:0>3}: Connection to store SQL server timed out")
+        else:
+          logger.error(
+            f"SFT {storenum:0>3}: Failed to connect to store SQL server",
+            exc_info=(exc_type, exc_val, exc_tb),
+            stack_info=True,
+          )
+        return True
+      elif exc_type is NoConnectionError:
+        logger.error(
+          f"SFT {storenum:0>3}: Failed to connect to store SQL server",
+          exc_info=(exc_type, exc_val, exc_tb),
+          stack_info=True,
+        )
+        return True
+      else:
+        logger.error(
+          f"SFT {storenum:0>3}: An unexpected exception occurred while connecting to store SQL server",
+          exc_info=(exc_type, exc_val, exc_tb),
+          stack_info=True,
+        )
     return StoreScanData(storenum=storenum)
 
   bulk_rate_raw = [tuple(row) for row in bulk_rate_raw]
@@ -245,64 +268,16 @@ def get_store_data(
   bulk_rate_data = DataFrame(
     bulk_rate_raw,
     dtype=object,
+    # dtype=str,
     columns=BulkRateCols.init_columns(),
   )
 
   itemized_invoice_data = DataFrame(
     itemized_invoice_raw,
     dtype=object,
+    # dtype=str,
     columns=ItemizedInvoiceCols.init_columns(),
   )
-
-  bulk_rate_data = bulk_rate_data.replace(NULL_VALUES, value=None)
-  itemized_invoice_data = itemized_invoice_data.replace(NULL_VALUES, value=None)
-
-  bulk_rate_data = bulk_rate_data.map(fix_decimals)
-  itemized_invoice_data = itemized_invoice_data.map(fix_decimals)
-
-  itemized_invoice_data[ItemizedInvoiceCols.Store_Number] = storenum
-  itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
-
-  itemized_invoice_data.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
-
-  # bulk_rate_data.to_csv(f"bulk_rate_data_{storenum}.csv", index=False)
-  # itemized_invoice_data.to_csv(f"itemized_invoice_data_{storenum}.csv", index=False)
-
-  bulk_rate_data = bulk_rate_data.apply(
-    taskgen_whencalled(
-      pbar,
-      description=f"Validating {storenum:0>3} bulk rates",
-      total=len(bulk_rate_data),
-      clear_when_finished=True,
-    )(apply_model_to_df)(),
-    model=BulkRateModel,
-    axis=1,
-    result_type="broadcast",
-  )
-  logger.info(f"Finished validating {storenum:0>3} bulk rates")
-
-  series_to_concat = []
-
-  itemized_invoice_data.apply(
-    taskgen_whencalled(
-      pbar,
-      description=f"Validating {storenum:0>3} itemized invoices",
-      total=len(itemized_invoice_data),
-      clear_when_finished=True,
-    )(apply_addrinfo_and_initial_validation)(),
-    axis=1,
-    model=ItemizedInvoiceModel,
-    errors=errors,
-    new_rows=series_to_concat,
-    addr_data=addr_info,
-  )
-  logger.info(f"Finished validating {storenum:0>3} itemized invoices")
-
-  itemized_invoice_data = concat(series_to_concat, axis=1).T
-
-  itemized_invoice_data = itemized_invoice_data[
-    itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(DeptIDsEnum.all_columns())
-  ]
 
   return StoreScanData(
     storenum=storenum,
@@ -312,58 +287,141 @@ def get_store_data(
 
 
 # TODO: Gather list of stores from google sheets
-TEMP_STORES_LIST = [1, 3, 8, 9, 16, 17, 19, 29, 42]
-# TEMP_STORES_LIST = [29]
+DEFAULT_STORES_LIST = [
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  34,
+  35,
+  36,
+  37,
+  38,
+  40,
+  42,
+  43,
+  44,
+  45,
+  46,
+  48,
+  49,
+  50,
+  51,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  62,
+  63,
+  64,
+  65,
+  66,
+  67,
+  82,
+  84,
+  85,
+  86,
+  88,
+]
+
+# TEMP_STORES_LIST = [14]
 
 
+# @cached_for_testing
 def query_all_stores_multithreaded(
-  queries: QueryDict,
-  addr_info: AddressInfoType,
-  errors: dict[int, list[Any]],
-  storenums: list[StoreNum] = TEMP_STORES_LIST,
-) -> ScanDataPackage:
+  queries: QueryDict, storenums: list[StoreNum] = DEFAULT_STORES_LIST
+) -> list[StoreScanData]:
   store_querying_futures: list[Future] = []
 
-  with Progress(
+  pbar = Progress(
     BarColumn(),
     TaskProgressColumn(),
     MofNCompleteColumn(),
     TextColumn("[progress.description]{task.description}"),
     console=rich_console,
-  ) as pbar:
-    with (
-      ThreadPoolExecutor(
-        # max_workers=4,
-      ) as executor
-    ):
+  )
+  items = {storenum: f"{storenum:0>3}" for storenum in storenums}
+  remaining_pbar = Progress(
+    TableColumn("Store Queries Remaining", items),
+    console=rich_console,
+  )
+
+  remaining_task = remaining_pbar.add_task("", total=len(storenums))
+
+  display_table = Table.grid()
+  display_table.add_row(remaining_pbar, pbar)
+
+  with Live(
+    display_table,
+    console=rich_console,
+    transient=True,
+  ) as _:
+    with ThreadPoolExecutor(
+      max_workers=len(storenums),
+    ) as executor:
       store_querying_futures.extend(
         executor.submit(
           get_store_data,
-          pbar=pbar,
           storenum=storenum,
-          addr_info=addr_info,
           queries=queries,
-          errors=errors,
         )
         for storenum in storenums
       )
-      itemized_invoices = []
-      bulk_rate_data = {}
+      scan_data = []
 
       store_querying_task = pbar.add_task("Querying Stores for Scan Data", total=len(storenums))
       for future in as_completed(store_querying_futures):
         try:
           result: StoreScanData = future.result()
-          logger.info(f"Finished getting store {result.storenum:0>3} data")
-          logger.debug(f"{result}")
-          if result.bulk_rate_data is not None:
-            bulk_rate_data[result.storenum] = result.bulk_rate_data
-          else:
-            logger.warning(f"Store {result.storenum} bulk rate data is None")
-          if result.itemized_invoice_data is not None:
-            itemized_invoices.append(result.itemized_invoice_data)
-          else:
-            logger.warning(f"Store {result.storenum} itemized invoice data is None")
+          logger.debug(f"SFT {result.storenum:0>3}: {result}")
+
+          bulk_found = result.bulk_rate_data is not None
+          itemized_found = result.itemized_invoice_data is not None
+
+          if not bulk_found:
+            logger.warning(f"SFT {result.storenum:0>3}: Store bulk rate data is None")
+          if not itemized_found:
+            logger.warning(f"SFT {result.storenum:0>3}: Store itemized invoice data is None")
+
+          if bulk_found and itemized_found:
+            scan_data.append(result)
+            remaining_pbar.update(remaining_task, advance=1, description=result.storenum)
+            logger.info(
+              f"SFT {result.storenum:0>3}: [bold green]Finished[/] getting store data",
+              extra={"markup": True},
+            )
+
         except Exception as e:
           logger.error(
             "An exception occurred while querying a store",
@@ -372,13 +430,7 @@ def query_all_stores_multithreaded(
           )
         pbar.update(store_querying_task, advance=1)
 
-  return ScanDataPackage(
-    bulk_data=bulk_rate_data,
-    itemized_invoice_data=concat(
-      itemized_invoices,
-      ignore_index=True,
-    ),
-  )
+  return scan_data
 
 
 if __name__ == "__main__":
@@ -394,8 +446,6 @@ if __name__ == "__main__":
     "itemized_invoice_data": build_itemized_invoice_query(start_date, last_sun),
   }
 
-  sheet_data = SheetCache()
-
   with Progress(
     BarColumn(),
     TaskProgressColumn(),
@@ -404,9 +454,6 @@ if __name__ == "__main__":
     console=rich_console,
   ) as pbar:
     get_store_data(
-      pbar=pbar,
-      storenum=1,
-      addr_info=sheet_data.info,
+      storenum=14,
       queries=queries,
-      errors=None,
     )

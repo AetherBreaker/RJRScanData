@@ -8,7 +8,6 @@ from logging import getLogger
 from pathlib import Path
 
 from pypika.queries import Database, Query, QueryBuilder, Schema, Table
-
 from utils import get_last_sun
 
 logger = getLogger(__name__)
@@ -21,6 +20,7 @@ _DATABASE_CRESQL = Database("cresql")
 _schema: Schema = _DATABASE_CRESQL.dbo
 _table_itemized_invoices: Table = _schema.Invoice_Itemized
 _table_inventory: Table = _schema.Inventory
+_table_inventory_coupon: Table = _schema.Inventory_Coupon
 _table_invoice_totals: Table = _schema.Invoice_Totals
 _table_inventory_bulk_info: Table = _schema.Inventory_Bulk_Info
 _table_customer: Table = _schema.Customer
@@ -57,6 +57,8 @@ def build_itemized_invoice_query(
       .on(_table_itemized_invoices.Invoice_Number == _table_invoice_totals.Invoice_Number)
       .left_join(_table_customer)
       .on(_table_invoice_totals.CustNum == _table_customer.CustNum)
+      .left_join(_table_inventory_coupon)
+      .on(_table_itemized_invoices.ItemNum == _table_inventory_coupon.ItemNum)
     )
     .select(
       _table_itemized_invoices.Invoice_Number,
@@ -81,6 +83,7 @@ def build_itemized_invoice_query(
       _table_inventory.Cost.as_("Inv_Cost"),
       _table_inventory.Price.as_("Inv_Price"),
       _table_inventory.Retail_Price.as_("Inv_Retail_Price"),
+      _table_inventory_coupon.Coupon_Flat_Percent,
       # _table_itemized_invoices.Kit_ItemNum,
       # _table_itemized_invoices.Store_ID,
       _table_itemized_invoices.origPricePer,

@@ -5,14 +5,14 @@ if __name__ == "__main__":
 
 from decimal import Decimal
 from logging import getLogger
+from typing import Any
 
-from pandas import DataFrame, Index, Series
+from numpy import nan
+from pandas import DataFrame, Index, Series, isna
 from types_column_names import ItemizedInvoiceCols
 from utils import truncate_decimal
 
 logger = getLogger(__name__)
-
-NULL_VALUES = ["NULL", "", " ", float("nan")]
 
 
 def distribute_discount(prices: Series, quantities: Series, flat_discount: Decimal) -> Series:
@@ -61,3 +61,24 @@ def combine_same_coupons(group: DataFrame, coupon_line_indexes: Index) -> DataFr
         group.drop(index=specific_coupon_duplicate_index, inplace=True)
 
   return group
+
+
+NULL_VALUES = ["NULL", "", " ", float("nan"), nan]
+
+
+def fillnas(value: Any):
+  if value is not None and (isna(value) or value in NULL_VALUES):
+    return None
+
+  return value
+
+
+def applymap(row: Series, apply_func: callable) -> Series:
+  for index, value in row.items():
+    row[index] = apply_func(value)
+
+  return row
+
+
+def fix_decimals(x: Decimal) -> Decimal:
+  return Decimal("0.00") if isinstance(x, Decimal) and str(x) == "0E-8" else x

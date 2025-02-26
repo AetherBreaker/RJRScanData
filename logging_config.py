@@ -1,8 +1,8 @@
 import logging
 from datetime import datetime
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler, TimedRotatingFileHandler
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from rich.console import Console, ConsoleRenderable
 from rich.logging import RichHandler
@@ -133,10 +133,30 @@ class FixedFormatter(logging.Formatter):
 
 CWD = Path.cwd()
 
-LOG_LOC_FOLDER = CWD / "daily_logs"
+LOGGING_BASE_NAME = "scan_data"
+
+LOG_LOC_FOLDER = CWD / "logs"
 LOG_LOC_FOLDER.mkdir(exist_ok=True)
-DEBUG_LOG_LOC = LOG_LOC_FOLDER / "scan_data_debug.log"
-INFO_LOG_LOC = LOG_LOC_FOLDER / "scan_data.log"
+DEBUG_LOG_LOC = LOG_LOC_FOLDER / f"{LOGGING_BASE_NAME}_debug.log"
+INFO_LOG_LOC = LOG_LOC_FOLDER / f"{LOGGING_BASE_NAME}.log"
+
+
+LOGGING_TYPE: Literal["daily", "per_run"] = "per_run"
+
+
+daily_debug_handler = TimedRotatingFileHandler(
+  DEBUG_LOG_LOC, when="midnight", backupCount=14, delay=True
+)
+daily_info_handler = TimedRotatingFileHandler(
+  INFO_LOG_LOC, when="midnight", backupCount=14, delay=True
+)
+
+per_run_debug_handler = RotatingFileHandler(DEBUG_LOG_LOC, maxBytes=0, backupCount=30, delay=True)
+per_run_info_handler = RotatingFileHandler(INFO_LOG_LOC, maxBytes=0, backupCount=30, delay=True)
+
+if LOGGING_TYPE == "per_run":
+  per_run_debug_handler.doRollover()
+  per_run_info_handler.doRollover()
 
 
 def configure_logging():
@@ -145,10 +165,10 @@ def configure_logging():
   root = logging.getLogger()
   root.setLevel(logging.DEBUG)
 
-  debugging_file_handler = TimedRotatingFileHandler(DEBUG_LOG_LOC, when="midnight", backupCount=14)
+  debugging_file_handler = daily_debug_handler if LOGGING_TYPE == "daily" else per_run_debug_handler
   debugging_file_handler.setLevel(logging.DEBUG)
 
-  info_file_handler = TimedRotatingFileHandler(INFO_LOG_LOC, when="midnight", backupCount=14)
+  info_file_handler = daily_info_handler if LOGGING_TYPE == "daily" else per_run_info_handler
   info_file_handler.setLevel(logging.INFO)
 
   # console_error_handler = logging.StreamHandler(sys.stderr)

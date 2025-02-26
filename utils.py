@@ -5,12 +5,13 @@ if __name__ == "__main__":
 
 import pickle
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from ftplib import FTP
 from functools import wraps
 from hashlib import md5
 from io import BufferedWriter
+from itertools import batched
 from json import load
 from logging import getLogger
 from os import get_terminal_size
@@ -19,9 +20,13 @@ from re import match
 from threading import Lock
 from typing import Any, Callable, Sequence
 
-from dateutil.relativedelta import SA, SU, relativedelta
+from dateutil.relativedelta import MO, SU, relativedelta
+from dateutil.utils import today
 from numpy import nan
-from rich.progress import Progress, TaskID
+from rich.console import RenderableType
+from rich.panel import Panel
+from rich.progress import Progress, ProgressColumn, Task, TaskID
+from rich.table import Table
 from types_custom import StoreNum
 
 logger = getLogger(__name__)
@@ -143,25 +148,34 @@ def login_ftp(ftp: FTP) -> None:
   ftp.login(user=creds["FTP_USER"], passwd=creds["FTP_PWD"])
 
 
-def get_last_sat() -> date:
-  now = datetime.now().date()
-  return now + relativedelta(weekday=SA(-1))
-
-
 def get_last_sun() -> date:
-  now = datetime.now().date()
+  now = today()
   return now + relativedelta(weekday=SU(-1))
 
 
+def get_last_mon() -> date:
+  now = today()
+  return now + relativedelta(weekday=MO(-1))
+
+
 def rjr_start_end_dates() -> tuple[date, date]:
-  end_date = get_last_sun()
-  start_date = end_date - timedelta(days=7)
+  end_date = get_last_mon()
+  start_date = end_date - relativedelta(weeks=1)
   return start_date, end_date
 
 
 def pm_start_end_dates() -> tuple[date, date]:
-  end_date = get_last_sat()
-  start_date = end_date - timedelta(days=7)
+  end_date = get_last_sun()
+  start_date = end_date - relativedelta(weeks=1)
+  return start_date, end_date
+
+
+def get_full_dates() -> tuple[date, date]:
+  rjr = rjr_start_end_dates()
+  pm = pm_start_end_dates()
+
+  start_date = min(rjr[0], pm[0])
+  end_date = max(rjr[1], pm[1])
   return start_date, end_date
 
 
@@ -274,3 +288,41 @@ def upce_to_upca(upce):
   check_digit = 10 - check_digit
   check_digit = check_digit % 10
   return newmsg + str(check_digit)
+
+
+# TEMP_STORES_LIST = [29]
+
+
+class TableColumn(ProgressColumn):
+  def __init__(self, title: str, items: dict[int, str], *args, **kwargs):
+    self.title = title
+    self.items = items
+    self.num_cols = 6
+    self.max_width = max(items, key=lambda x: len(items[x]))
+
+    super().__init__(*args, **kwargs)
+
+  def render(self, task: "Task") -> RenderableType:
+    if isinstance(task.description, str):
+      items_to_remove = task.description.split(",")
+    elif isinstance(task.description, int):
+      items_to_remove = [task.description]
+    else:
+      items_to_remove = [""]
+    if items_to_remove != [""]:
+      for item in items_to_remove:
+        item = int(item)
+        if item in self.items:
+          self.items[item] = " " * self.max_width
+        else:
+          pass
+
+    remaining_grid = Table.grid(
+      padding=(0, 1),
+      # expand=True,
+    )
+
+    for row in batched(self.items.values(), self.num_cols):
+      remaining_grid.add_row(*row)
+
+    return Panel.fit(remaining_grid, title=self.title, border_style="blue", padding=(0, 1))
