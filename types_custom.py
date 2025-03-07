@@ -3,9 +3,10 @@ if __name__ == "__main__":
 
   configure_logging()
 
+from collections import UserDict
 from enum import Enum, auto
 from logging import getLogger
-from typing import Any, Callable, Literal, NamedTuple, Optional, TypedDict
+from typing import Any, Callable, Literal, NamedTuple, NewType, TypedDict
 
 from pandas import DataFrame
 from pydantic import BaseModel, ValidationError
@@ -222,8 +223,6 @@ type SQLUID = str
 type SQLHostName = str
 type SQLDriver = str
 
-type BulkDataRaw = list[Row]
-type ItemizedDataRaw = list[Row]
 
 type BulkRateDataType = DataFrame
 type ItemizedInvoiceDataType = DataFrame
@@ -232,29 +231,24 @@ type VAPDataType = DataFrame
 type BuydownsDataType = DataFrame
 type UnitOfMeasureDataType = DataFrame
 
-
 type PromoFlag = Literal["N", "Y"]
 
+type QueryName = str
+type QueryDict = dict[QueryName, QueryPackage]
+type QueryResultRaw = list[Row]
 
-class QueryDict(TypedDict):
-  bulk_rate_data: QueryBuilder
-  itemized_invoice_data: QueryBuilder
+ColumnsEnumType = NewType("ColumnsEnumType", ColNameEnum)
 
 
-class QueryResultsDict(TypedDict):
-  bulk_rate_data: BulkDataRaw
-  itemized_invoice_data: ItemizedDataRaw
+class QueryPackage(NamedTuple):
+  query: QueryBuilder
+  cols: ColumnsEnumType | list[str]
 
 
 class SQLCreds(TypedDict):
   DRIVER: SQLDriver
   UID: SQLUID
   PWD: SQLPWD
-
-
-class ScanDataPackage(TypedDict):
-  bulk_data: dict[StoreNum, BulkRateDataType]
-  itemized_invoice_data: ItemizedInvoiceDataType
 
 
 class ModelContextType(TypedDict):
@@ -271,7 +265,30 @@ class ValidationErrPackage(NamedTuple):
   err: ValidationError
 
 
-class StoreScanData(NamedTuple):
+class BulkDataPackage(NamedTuple):
   storenum: StoreNum
-  bulk_rate_data: Optional[BulkRateDataType] = None
-  itemized_invoice_data: Optional[ItemizedInvoiceDataType] = None
+  bulk_rate_data: BulkRateDataType
+
+
+class ItemizedDataPackage(NamedTuple):
+  storenum: StoreNum
+  itemized_invoice_data: ItemizedInvoiceDataType
+
+
+class StoreResultsPackage(UserDict):
+  data: dict[QueryName, DataFrame]
+
+  def __init__(self, storenum: StoreNum, data=None) -> None:
+    super().__init__(data)
+    self.__storenum = storenum
+
+  @property
+  def storenum(self) -> StoreNum:
+    return self.__storenum
+
+  def __bool__(self):
+    return any(val is not None for val in self.values())
+
+
+class QueryResultsPackage(StoreResultsPackage):
+  data: dict[QueryName, QueryResultRaw]

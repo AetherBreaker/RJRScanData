@@ -8,7 +8,7 @@ from rich.console import Console, ConsoleRenderable
 from rich.logging import RichHandler
 from rich.traceback import Traceback
 
-rich_console = Console()
+RICH_CONSOLE = Console()
 
 project_name = "RJRScanData"
 
@@ -176,7 +176,7 @@ def configure_logging():
 
   console_error_handler = FixedRichHandler(
     level=logging.ERROR,
-    console=rich_console,
+    console=RICH_CONSOLE,
     rich_tracebacks=True,
     log_time_format=logging_timestamp_fmt,
   )
@@ -186,7 +186,7 @@ def configure_logging():
 
   console_info_handler = FixedRichHandler(
     level=logging.INFO,
-    console=rich_console,
+    console=RICH_CONSOLE,
     rich_tracebacks=True,
     log_time_format=logging_timestamp_fmt,
   )

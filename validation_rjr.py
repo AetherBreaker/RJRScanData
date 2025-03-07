@@ -6,12 +6,11 @@ if __name__ == "__main__":
 from datetime import datetime
 from decimal import Decimal
 from logging import getLogger
+from typing import Optional
 
 from pydantic import AfterValidator, AliasChoices, BeforeValidator, Field, computed_field
+from types_custom import PromoFlag, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from typing_extensions import Annotated
-
-from sql_querying import StoreNum
-from types_custom import Optional, PromoFlag, StatesEnum, UnitsOfMeasureEnum
 from utils import truncate_decimal
 from validation_config import CustomBaseModel
 from validators_shared import validate_unit_type
@@ -34,7 +33,7 @@ class RJRValidationModel(CustomBaseModel):
   register_id: Annotated[int, Field(alias="Station_ID")]
   quantity: Annotated[int, Field(alias="Quantity")]
   price: Annotated[Decimal, Field(alias="Inv_Price"), AfterValidator(truncate_decimal)]
-  upc_code: Annotated[str, Field(alias="ItemNum")]
+  upc_code: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14)]
   upc_description: Annotated[str, Field(alias="ItemName")]
   unit_of_measure: Annotated[
     UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")
@@ -43,29 +42,33 @@ class RJRValidationModel(CustomBaseModel):
     None
   )
   outlet_multipack_discount_amt: Annotated[
-    Optional[Decimal], Field(alias="Retail_Multipack_Disc_Amt")
+    Optional[Decimal], Field(alias="Retail_Multipack_Disc_Amt"), AfterValidator(truncate_decimal)
   ] = None
   acct_promo_name: Annotated[Optional[str], Field(alias="Acct_Promo_Name")] = None
-  acct_discount_amt: Annotated[Optional[Decimal], Field(alias="Acct_Discount_Amt")] = None
+  acct_discount_amt: Annotated[
+    Optional[Decimal], Field(alias="Acct_Discount_Amt"), AfterValidator(truncate_decimal)
+  ] = None
   manufacturer_discount_amt: Annotated[
-    Optional[Decimal], Field(alias="Manufacturer_Discount_Amt")
+    Optional[Decimal], Field(alias="Manufacturer_Discount_Amt"), AfterValidator(truncate_decimal)
   ] = None
   pid_coupon: Annotated[Optional[str], Field(alias="PID_Coupon")] = None
-  pid_coupon_discount_amt: Annotated[Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt")] = (
-    None
-  )
+  pid_coupon_discount_amt: Annotated[
+    Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt"), AfterValidator(truncate_decimal)
+  ] = None
   manufacturer_multipack_quantity: Annotated[
     Optional[int], Field(alias="Manufacturer_Multipack_Quantity")
   ] = None
   manufacturer_multipack_discount_amt: Annotated[
-    Optional[Decimal], Field(alias="Manufacturer_Multipack_Discount_Amt")
+    Optional[Decimal],
+    Field(alias="Manufacturer_Multipack_Discount_Amt"),
+    AfterValidator(truncate_decimal),
   ] = None
   manufacturer_promo_desc: Annotated[Optional[str], Field(alias="Manufacturer_Promo_Desc")] = None
   manufacturer_buydown_desc: Annotated[Optional[str], Field(alias="Manufacturer_Buydown_Desc")] = (
     None
   )
   manufacturer_buydown_amt: Annotated[
-    Optional[Decimal], Field(alias="Manufacturer_Buydown_Amt")
+    Optional[Decimal], Field(alias="Manufacturer_Buydown_Amt"), AfterValidator(truncate_decimal)
   ] = None
   manufacturer_multipack_desc: Annotated[
     Optional[str], Field(alias="Manufacturer_Multipack_Desc")

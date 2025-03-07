@@ -33,7 +33,11 @@ REPORTING_FOLDER.mkdir(exist_ok=True)
 
 
 BAD_CUST_ID_REPORTS = REPORTING_FOLDER / "Bad Cust ID.csv"
+if BAD_CUST_ID_REPORTS.exists():
+  BAD_CUST_ID_REPORTS.unlink()
 LAZY_EMPLOYEE_REPORTS = REPORTING_FOLDER / "Lazy Employee.csv"
+if LAZY_EMPLOYEE_REPORTS.exists():
+  LAZY_EMPLOYEE_REPORTS.unlink()
 
 
 shared_file_lock = Lock()
@@ -81,7 +85,7 @@ def report_errors(context: ModelContextType):
       if not cond:
         match field_name:
           case "CustNum":
-            employee_id = int(context["input"][ItemizedInvoiceCols.Cashier_ID])
+            employee_id = str(context["input"][ItemizedInvoiceCols.Cashier_ID])
             infraction_date = context["input"][ItemizedInvoiceCols.DateTime]
             # check if the empoyee id is in the lazy employees index
 

@@ -21,12 +21,14 @@ from types_column_names import (
 )
 from types_custom import (
   AddressInfoType,
+  BulkDataPackage,
   BulkRateDataType,
   BuydownsDataType,
   DeptIDsEnum,
+  ItemizedDataPackage,
+  ItemizedInvoiceDataType,
   ModelContextType,
   StoreNum,
-  StoreScanData,
   VAPDataType,
 )
 from utils import convert_storenum_to_str, taskgen_whencalled
@@ -159,48 +161,19 @@ def apply_model_to_df(
   return row
 
 
-def first_validation_pass(
+def bulk_rate_validation_pass(
   pbar: Progress,
-  data: StoreScanData,
-  addr_info: AddressInfoType,
-  errors: dict[int, list[Any]] = None,
-) -> StoreScanData:
-  storenum = data.storenum
-  bulk_rate_data = data.bulk_rate_data
-  itemized_invoice_data = data.itemized_invoice_data
+  storenum: StoreNum,
+  bulk_dat: BulkRateDataType,
+) -> BulkDataPackage:
+  bulk_dat = bulk_dat.map(fix_decimals)
+  bulk_dat = bulk_dat.replace(NULL_VALUES, value=None)
 
-  itemized_invoice_data[ItemizedInvoiceCols.Store_Number] = storenum
-  itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
-
-  # filter itemized invoices down to only RJR and PM departments
-  itemized_invoice_data = itemized_invoice_data[
-    itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(scan_depts)
-  ]
-
-  # bulk_rate_data = bulk_rate_data.map(fillnas)
-  # itemized_invoice_data = itemized_invoice_data.map(fillnas)
-
-  # bulk_rate_data = bulk_rate_data.map(fix_str_decimals)
-  # itemized_invoice_data = itemized_invoice_data.map(fix_str_decimals)
-
-  bulk_rate_data = bulk_rate_data.map(fix_decimals)
-  itemized_invoice_data = itemized_invoice_data.map(fix_decimals)
-
-  itemized_invoice_data = itemized_invoice_data.astype(object)
-
-  bulk_rate_data = bulk_rate_data.replace(NULL_VALUES, value=None)
-  itemized_invoice_data = itemized_invoice_data.replace(NULL_VALUES, value=None)
-
-  itemized_invoice_data.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
-
-  # bulk_rate_data.to_csv(f"bulk_rate_data_{storenum}.csv", index=False)
-  # itemized_invoice_data.to_csv(f"itemized_invoice_data_{storenum}.csv", index=False)
-
-  bulk_rate_data = bulk_rate_data.apply(
+  bulk_dat = bulk_dat.apply(
     taskgen_whencalled(
       pbar,
       description=f"Validating {storenum:0>3} bulk rates",
-      total=len(bulk_rate_data),
+      total=len(bulk_dat),
       clear_when_finished=True,
     )(apply_model_to_df)(),
     model=BulkRateModel,
@@ -211,6 +184,33 @@ def first_validation_pass(
     f"SFT {storenum:0>3}: [bold orange_red1]Finished[/] validating bulk rates",
     extra={"markup": True},
   )
+
+  return BulkDataPackage(
+    storenum=storenum,
+    bulk_rate_data=bulk_dat,
+  )
+
+
+def itemized_inv_first_validation_pass(
+  pbar: Progress,
+  storenum: StoreNum,
+  itemized_invoice_data: ItemizedInvoiceDataType,
+  addr_info: AddressInfoType,
+  errors: dict[int, list[Any]] = None,
+) -> ItemizedDataPackage:
+  itemized_invoice_data[ItemizedInvoiceCols.Store_Number] = storenum
+  itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
+
+  # filter itemized invoices down to only RJR and PM departments
+  itemized_invoice_data = itemized_invoice_data[
+    itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(scan_depts)
+  ]
+
+  itemized_invoice_data = itemized_invoice_data.map(fix_decimals)
+  itemized_invoice_data = itemized_invoice_data.astype(object)
+  itemized_invoice_data = itemized_invoice_data.replace(NULL_VALUES, value=None)
+
+  itemized_invoice_data.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
 
   series_to_concat = []
 
@@ -232,20 +232,17 @@ def first_validation_pass(
     extra={"markup": True},
   )
 
-  itemized_invoice_data = concat(series_to_concat, axis=1).T
+  try:
+    itemized_invoice_data = concat(series_to_concat, axis=1).T
+  except ValueError:
+    return storenum
 
   itemized_invoice_data = itemized_invoice_data[
     itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(DeptIDsEnum.all_columns())
   ]
 
-  logger.info(
-    f"SFT {storenum:0>3}: [bold bright_green]Finished[/] first validation pass",
-    extra={"markup": True},
-  )
-
-  return StoreScanData(
+  return ItemizedDataPackage(
     storenum=storenum,
-    bulk_rate_data=bulk_rate_data,
     itemized_invoice_data=itemized_invoice_data,
   )
 
@@ -280,6 +277,12 @@ def apply_addrinfo_and_initial_validation(
   if quantity_err := context["row_err"].get("Quantity", None):
     if isinstance(quantity_err[0], Decimal):
       return row
+
+  if context["row_err"].get("CustNum", None):
+    return row
+
+  if row[ItemizedInvoiceCols.ItemName] == "Cigar Promo 100% Discount":
+    return row
 
   # serialize the model to a dict
   model_dict = model.model_dump()

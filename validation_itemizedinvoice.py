@@ -10,7 +10,6 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BeforeValidator, Field
 from types_custom import DeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
-from utils import truncate_decimal
 from validation_config import CustomBaseModel
 from validators_shared import abs_decimal, map_to_upca, strip_string_to_digits, validate_unit_type
 
@@ -19,7 +18,7 @@ logger = getLogger(__name__)
 
 class ItemizedInvoiceModel(CustomBaseModel):
   Invoice_Number: int
-  CustNum: Annotated[str, Field(pattern=r"[0-9a-zA-Z]+")]
+  CustNum: Annotated[str, Field(pattern=r"^[0-9a-zA-Z]+$", min_length=10)]
   Phone_1: Annotated[Optional[int], BeforeValidator(strip_string_to_digits)]
   AgeVerificationMethod: str
   AgeVerification: str
@@ -34,17 +33,17 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Unit_Type: Annotated[UnitsOfMeasureEnum, BeforeValidator(validate_unit_type)]
   DateTime: datetime
   Quantity: int
-  CostPer: Annotated[Decimal, AfterValidator(truncate_decimal)]
-  PricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
-  Tax1Per: Annotated[Decimal, AfterValidator(truncate_decimal)]
-  Inv_Cost: Annotated[Decimal, AfterValidator(truncate_decimal)]
-  Inv_Price: Annotated[Decimal, AfterValidator(truncate_decimal), AfterValidator(abs_decimal)]
-  Inv_Retail_Price: Annotated[Decimal, AfterValidator(truncate_decimal)]
+  CostPer: Decimal
+  PricePer: Decimal
+  Tax1Per: Decimal
+  Inv_Cost: Decimal
+  Inv_Price: Annotated[Decimal, AfterValidator(abs_decimal)]
+  Inv_Retail_Price: Decimal
   Coupon_Flat_Percent: Optional[Literal[0, 1]]
-  origPricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
+  origPricePer: Decimal
   MixNMatchRate: Optional[str]
-  SalePricePer: Annotated[Decimal, AfterValidator(truncate_decimal)]
-  PricePerBeforeDiscount: Annotated[Decimal, AfterValidator(truncate_decimal)]
+  SalePricePer: Decimal
+  PricePerBeforeDiscount: Decimal
   PriceChangedBy: str
   Store_Number: StoreNum
   Store_Name: str

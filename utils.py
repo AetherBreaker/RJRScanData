@@ -11,7 +11,6 @@ from ftplib import FTP
 from functools import wraps
 from hashlib import md5
 from io import BufferedWriter
-from itertools import batched
 from json import load
 from logging import getLogger
 from os import get_terminal_size
@@ -23,10 +22,7 @@ from typing import Any, Callable, Sequence
 from dateutil.relativedelta import MO, SU, relativedelta
 from dateutil.utils import today
 from numpy import nan
-from rich.console import RenderableType
-from rich.panel import Panel
-from rich.progress import Progress, ProgressColumn, Task, TaskID
-from rich.table import Table
+from rich.progress import Progress, TaskID
 from types_custom import StoreNum
 
 logger = getLogger(__name__)
@@ -210,6 +206,35 @@ def cached_for_testing(func: Callable):
         for item in arg:
           if isinstance(item, (str, int, float)):
             arghash.update(str(item).encode())
+          else:
+            try:
+              arghash.update(str(item).encode())
+            except TypeError:
+              pass
+      else:
+        try:
+          arghash.update(str(arg).encode())
+        except TypeError:
+          pass
+
+    for key, value in kwargs.items():
+      arghash.update(key.encode())
+      if isinstance(value, (str, int, float)):
+        arghash.update(str(value).encode())
+      elif isinstance(value, Sequence):
+        for item in value:
+          if isinstance(item, (str, int, float)):
+            arghash.update(str(item).encode())
+          else:
+            try:
+              arghash.update(str(item).encode())
+            except TypeError:
+              pass
+      else:
+        try:
+          arghash.update(str(value).encode())
+        except TypeError:
+          pass
 
     filename = RESULTS_PICKLE_CACHE / f"{arghash.hexdigest()}.pickle"
     if filename.exists():
@@ -288,41 +313,3 @@ def upce_to_upca(upce):
   check_digit = 10 - check_digit
   check_digit = check_digit % 10
   return newmsg + str(check_digit)
-
-
-# TEMP_STORES_LIST = [29]
-
-
-class TableColumn(ProgressColumn):
-  def __init__(self, title: str, items: dict[int, str], *args, **kwargs):
-    self.title = title
-    self.items = items
-    self.num_cols = 6
-    self.max_width = max(items, key=lambda x: len(items[x]))
-
-    super().__init__(*args, **kwargs)
-
-  def render(self, task: "Task") -> RenderableType:
-    if isinstance(task.description, str):
-      items_to_remove = task.description.split(",")
-    elif isinstance(task.description, int):
-      items_to_remove = [task.description]
-    else:
-      items_to_remove = [""]
-    if items_to_remove != [""]:
-      for item in items_to_remove:
-        item = int(item)
-        if item in self.items:
-          self.items[item] = " " * self.max_width
-        else:
-          pass
-
-    remaining_grid = Table.grid(
-      padding=(0, 1),
-      # expand=True,
-    )
-
-    for row in batched(self.items.values(), self.num_cols):
-      remaining_grid.add_row(*row)
-
-    return Panel.fit(remaining_grid, title=self.title, border_style="blue", padding=(0, 1))

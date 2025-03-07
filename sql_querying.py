@@ -5,15 +5,16 @@ if __name__ == "__main__":
 
 import json
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from functools import partial
+from itertools import product
 from logging import getLogger
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Literal, cast
 
-from logging_config import rich_console
+from logging_config import RICH_CONSOLE
 from pandas import DataFrame
 from pyodbc import Connection, Error, OperationalError, connect
-from rich.live import Live
 from rich.progress import (
   BarColumn,
   MofNCompleteColumn,
@@ -21,20 +22,22 @@ from rich.progress import (
   TaskProgressColumn,
   TextColumn,
 )
-from rich.table import Table
+from rich_custom import LiveCustom
 from sql_query_builders import (
   update_database_name,
 )
-from types_column_names import BulkRateCols, ItemizedInvoiceCols
+from types_column_names import ColNameEnum
 from types_custom import (
   QueryDict,
-  QueryResultsDict,
+  QueryName,
+  QueryPackage,
+  QueryResultsPackage,
   SQLCreds,
   SQLHostName,
   StoreNum,
-  StoreScanData,
+  StoreResultsPackage,
 )
-from utils import TableColumn, cached_for_testing
+from utils import cached_for_testing
 
 logger = getLogger(__name__)
 
@@ -192,19 +195,20 @@ _QUERY_THREADING_LOCK = Lock()
 
 
 # @cached_for_testing
-def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsDict:
+def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsPackage:
   static_queries = {}
-  results: QueryResultsDict = {}
+  results = QueryResultsPackage(storenum=storenum)
   with StoreSQLConn(storenum) as conn:
     with conn.cursor() as cursor:
       db_name = cursor.execute(LAST_USED_DB_QUERYFILE.read_text()).fetchone()[0]
       with _QUERY_THREADING_LOCK:
         update_database_name(db_name)
 
-        for query_name, query in queries.items():
+        for query_name, (query, _) in queries.items():
           static_queries[query_name] = query.get_sql()
 
       for query_name, query in static_queries.items():
+        logger.info(f"SFT {storenum:0>3}: Querying {query_name} data")
         results[query_name] = cursor.execute(query).fetchall()
 
   return results
@@ -213,19 +217,16 @@ def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsDict:
 def get_store_data(
   storenum: StoreNum,
   queries: QueryDict,
-) -> StoreScanData:
-  logger.info(
-    f"SFT {storenum:0>3}: [bold blue]Started[/] querying store for scan data",
-    extra={"markup": True},
+) -> StoreResultsPackage:
+  logger.debug(
+    f"SFT {storenum:0>3}: Getting Store Data",
   )
   try:
-    results = query_store(storenum, queries)
-    bulk_rate_raw = results["bulk_rate_data"]
-    itemized_invoice_raw = results["itemized_invoice_data"]
+    query_results = query_store(storenum, queries)
     logger.debug(f"SFT {storenum:0>3}: Finished querying store")
   except NoConnectionError:
     logger.warning(f"SFT {storenum:0>3}: Failed to connect to store SQL server")
-    return StoreScanData(storenum=storenum)
+    return StoreResultsPackage(storenum=storenum)
 
   except Exception as e:
     exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
@@ -246,43 +247,46 @@ def get_store_data(
             exc_info=(exc_type, exc_val, exc_tb),
             stack_info=True,
           )
-        return True
       elif exc_type is NoConnectionError:
         logger.error(
           f"SFT {storenum:0>3}: Failed to connect to store SQL server",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
-        return True
       else:
         logger.error(
           f"SFT {storenum:0>3}: An unexpected exception occurred while connecting to store SQL server",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
-    return StoreScanData(storenum=storenum)
+    return StoreResultsPackage(storenum=storenum)
 
-  bulk_rate_raw = [tuple(row) for row in bulk_rate_raw]
-  itemized_invoice_raw = [tuple(row) for row in itemized_invoice_raw]
+  store_data = {}
 
-  bulk_rate_data = DataFrame(
-    bulk_rate_raw,
-    dtype=object,
-    # dtype=str,
-    columns=BulkRateCols.init_columns(),
-  )
+  for query_name, query_result in query_results.items():
+    if not query_result:
+      logger.warning(f"SFT {storenum:0>3}: No results found for {query_name} query")
+      return StoreResultsPackage(storenum=storenum)
 
-  itemized_invoice_data = DataFrame(
-    itemized_invoice_raw,
-    dtype=object,
-    # dtype=str,
-    columns=ItemizedInvoiceCols.init_columns(),
-  )
+    raw = [tuple(row) for row in query_result]
 
-  return StoreScanData(
+    if not (cols := queries.get(query_name).cols):
+      logger.warning(f"SFT {storenum:0>3}: No columns found for {query_name} query")
+      return StoreResultsPackage(storenum=storenum)
+
+    if issubclass(cols, ColNameEnum):
+      cols = cols.init_columns()
+
+    store_data[query_name] = DataFrame(
+      raw,
+      dtype=object,
+      # dtype=str,
+      columns=cols,
+    )
+
+  return StoreResultsPackage(
     storenum=storenum,
-    bulk_rate_data=bulk_rate_data,
-    itemized_invoice_data=itemized_invoice_data,
+    data=store_data,
   )
 
 
@@ -355,72 +359,66 @@ DEFAULT_STORES_LIST = [
   88,
 ]
 
-# TEMP_STORES_LIST = [14]
+# DEFAULT_STORES_LIST = [82]
 
 
-# @cached_for_testing
-def query_all_stores_multithreaded(
-  queries: QueryDict, storenums: list[StoreNum] = DEFAULT_STORES_LIST
-) -> list[StoreScanData]:
+@cached_for_testing
+def pre_query_all_stores_multithreaded[q_name: QueryName](
+  queries: dict[q_name, QueryPackage], storenums: list[StoreNum]
+) -> dict[q_name, dict[StoreNum, DataFrame]]:
   store_querying_futures: list[Future] = []
 
-  pbar = Progress(
-    BarColumn(),
-    TaskProgressColumn(),
-    MofNCompleteColumn(),
-    TextColumn("[progress.description]{task.description}"),
-    console=rich_console,
-  )
-  items = {storenum: f"{storenum:0>3}" for storenum in storenums}
-  remaining_pbar = Progress(
-    TableColumn("Store Queries Remaining", items),
-    console=rich_console,
-  )
+  items = {storenum: storenum for storenum in storenums}
 
-  remaining_task = remaining_pbar.add_task("", total=len(storenums))
-
-  display_table = Table.grid()
-  display_table.add_row(remaining_pbar, pbar)
-
-  with Live(
-    display_table,
-    console=rich_console,
+  with LiveCustom(
+    console=RICH_CONSOLE,
     transient=True,
-  ) as _:
+  ) as live:
+    pbar = live.pbar
+
+    remaining_updaters = {
+      query_name: updater
+      for query_name, updater in zip(
+        queries.keys(),
+        live.init_remaining(
+          *(
+            (items, f"{query_name.capitalize().replace("_", " ")} Queries")
+            for query_name in queries.keys()
+          )
+        ),
+      )
+    }
     with ThreadPoolExecutor(
-      max_workers=len(storenums),
+      max_workers=len(storenums) * len(queries),
     ) as executor:
-      store_querying_futures.extend(
-        executor.submit(
+      for (query_name, query_package), storenum in product(queries.items(), storenums):
+        future = executor.submit(
           get_store_data,
           storenum=storenum,
-          queries=queries,
+          queries={query_name: query_package},
         )
-        for storenum in storenums
-      )
-      scan_data = []
+        store_querying_futures.append(future)
+
+      query_results: dict[q_name, dict[StoreNum, DataFrame]] = {
+        query_name: {} for query_name in queries.keys()
+      }
 
       store_querying_task = pbar.add_task("Querying Stores for Scan Data", total=len(storenums))
       for future in as_completed(store_querying_futures):
         try:
-          result: StoreScanData = future.result()
-          logger.debug(f"SFT {result.storenum:0>3}: {result}")
+          result = cast(StoreResultsPackage, future.result())
+          storenum = result.storenum
+          logger.debug(f"SFT {storenum:0>3}: {result}")
 
-          bulk_found = result.bulk_rate_data is not None
-          itemized_found = result.itemized_invoice_data is not None
-
-          if not bulk_found:
-            logger.warning(f"SFT {result.storenum:0>3}: Store bulk rate data is None")
-          if not itemized_found:
-            logger.warning(f"SFT {result.storenum:0>3}: Store itemized invoice data is None")
-
-          if bulk_found and itemized_found:
-            scan_data.append(result)
-            remaining_pbar.update(remaining_task, advance=1, description=result.storenum)
-            logger.info(
-              f"SFT {result.storenum:0>3}: [bold green]Finished[/] getting store data",
-              extra={"markup": True},
-            )
+          if result:
+            for query_name, query_result in result.items():
+              container = query_results.setdefault(query_name, {})
+              container[storenum] = query_result
+              remaining_updaters[query_name](storenum)
+              logger.info(
+                f"SFT {storenum:0>3}: Finished getting {query_name}",
+                extra={"markup": True},
+              )
 
         except Exception as e:
           logger.error(
@@ -428,22 +426,27 @@ def query_all_stores_multithreaded(
             exc_info=(type(e), e, e.__traceback__),
             stack_info=True,
           )
-        pbar.update(store_querying_task, advance=1)
+        if all(storenum in container for container in query_results.values()):
+          pbar.update(store_querying_task, advance=1)
 
-  return scan_data
+  return query_results
 
+
+query_all_stores_multithreaded = partial(
+  cached_for_testing(pre_query_all_stores_multithreaded), storenums=DEFAULT_STORES_LIST
+)
 
 if __name__ == "__main__":
-  from datetime import timedelta
-
   from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
-  from utils import get_last_sun
+  from types_column_names import BulkRateCols, ItemizedInvoiceCols
+  from utils import get_full_dates
 
-  last_sun = get_last_sun()
-  start_date = last_sun - timedelta(days=8)
+  start_date, last_sun = get_full_dates()
   queries: QueryDict = {
-    "bulk_rate_data": build_bulk_info_query(),
-    "itemized_invoice_data": build_itemized_invoice_query(start_date, last_sun),
+    "bulk_rate_data": QueryPackage(query=build_bulk_info_query(), cols=BulkRateCols),
+    "itemized_invoice_data": QueryPackage(
+      query=build_itemized_invoice_query(start_date, last_sun), cols=ItemizedInvoiceCols
+    ),
   }
 
   with Progress(
@@ -451,7 +454,7 @@ if __name__ == "__main__":
     TaskProgressColumn(),
     MofNCompleteColumn(),
     TextColumn("[progress.description]{task.description}"),
-    console=rich_console,
+    console=RICH_CONSOLE,
   ) as pbar:
     get_store_data(
       storenum=14,
