@@ -20,7 +20,13 @@ logger = getLogger(__name__)
 
 class RJRValidationModel(CustomBaseModel):
   outlet_number: Annotated[
-    StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"), pattern=r"[\w\d]+")
+    Optional[StoreNum],
+    Field(
+      alias=AliasChoices(
+        "Store_ID",
+        "Store_Number",
+      ),
+    ),
   ]
   address_1: Annotated[Optional[str], Field(alias="Store_Address")]
   address_2: Annotated[Optional[str], Field(alias="Store_Address2")]
@@ -31,9 +37,18 @@ class RJRValidationModel(CustomBaseModel):
   market_basket_id: Annotated[int, Field(alias="Invoice_Number")]
   scan_id: Annotated[int, Field(alias="LineNum")]
   register_id: Annotated[int, Field(alias="Station_ID")]
-  quantity: Annotated[int, Field(alias="Quantity")]
+  quantity: Annotated[int, Field(alias="Quantity", le=100)]
   price: Annotated[Decimal, Field(alias="Inv_Price"), AfterValidator(truncate_decimal)]
-  upc_code: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14)]
+  upc_code: Annotated[
+    str,
+    Field(
+      alias="ItemNum",
+      min_length=6,
+      max_length=14,
+      # UPC codes must be numeric only
+      pattern=r"^[0-9]{6,14}$",
+    ),
+  ]
   upc_description: Annotated[str, Field(alias="ItemName")]
   unit_of_measure: Annotated[
     UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")
@@ -73,13 +88,16 @@ class RJRValidationModel(CustomBaseModel):
   manufacturer_multipack_desc: Annotated[
     Optional[str], Field(alias="Manufacturer_Multipack_Desc")
   ] = None
-  account_loyalty_id_number: Annotated[str, Field(alias="CustNum")]
+  account_loyalty_id_number: Annotated[
+    Optional[str],
+    Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum"),
+  ]
   coupon_desc: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
 
   @computed_field
   @property
   def outlet_name(self) -> str:
-    return f"SFT{self.outlet_number:0>3}"
+    return "Sweet Fire Tobacco Inc."
 
   @computed_field
   @property

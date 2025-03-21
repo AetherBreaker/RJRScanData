@@ -7,12 +7,13 @@ from decimal import Decimal
 from logging import getLogger
 from re import compile
 from string import Template
-from typing import Any, Callable, Type
+from typing import Annotated, Any, Callable, Type
 
 from dataframe_utils import NULL_VALUES, combine_same_coupons, distribute_discount, fix_decimals
 from pandas import DataFrame, Series, concat, isna
 from reporting_validation_errs import report_errors
 from rich.progress import Progress
+from sql_querying import CUR_WEEK
 from types_column_names import (
   BulkRateCols,
   GSheetsBuydownsCols,
@@ -31,15 +32,20 @@ from types_custom import (
   StoreNum,
   VAPDataType,
 )
-from utils import convert_storenum_to_str, taskgen_whencalled
+from utils import (
+  cached_for_testing,
+  convert_storenum_to_str,
+  taskgen_whencalled,
+  wraps,
+)
 from validation_config import CustomBaseModel
 from validation_itemizedinvoice import ItemizedInvoiceModel
-from validation_other import BulkRateModel
+from validators_shared import map_to_upca
 
 logger = getLogger(__name__)
 
 
-base_context: ModelContextType = {
+base_context = {
   "skip_fields": {"Dept_ID": None, "Quantity": None},
 }
 
@@ -59,13 +65,14 @@ pm_depts = DeptIDsEnum.pm_depts()
 scan_depts = rjr_depts.union(pm_depts)
 
 
-def context_setup(func: Callable) -> Callable:
+def context_setup[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+  @wraps(func)
   def wrapper(
     row: Series,
-    errors: dict[int, Any] = None,
-    *args,
-    **kwargs,
-  ):
+    errors: dict[int, Any] | None = None,
+    *args: P.args,
+    **kwargs: P.kwargs,
+  ) -> R:
     context = base_context.copy()
 
     update = {
@@ -91,7 +98,10 @@ def context_setup(func: Callable) -> Callable:
       if errors is not None:
         row_errors = errors.get(row.name, [])
         row_errors.append(context["row_err"])
+      # try:
       report_errors(context)
+      # except Exception as e:
+      #   logger.error(f"Error reporting errors for row {row.name}: {e}")
 
     return result
 
@@ -121,6 +131,12 @@ def apply_model_to_df_transforming(
 
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
+
+  if context["row_err"].get("account_loyalty_id_number", None):
+    return row
+
+  if context["row_err"].get("upc_code", None):
+    return row
 
   # serialize the model to a dict
   model_dict = model.model_dump()
@@ -161,10 +177,18 @@ def apply_model_to_df(
   return row
 
 
+def init_bulk_types(row: Series) -> Series:
+  row[BulkRateCols.ItemNum] = str(map_to_upca(row[BulkRateCols.ItemNum]))
+  row[BulkRateCols.Bulk_Price] = Decimal(row[BulkRateCols.Bulk_Price])
+  row[BulkRateCols.Bulk_Quan] = Decimal(row[BulkRateCols.Bulk_Quan])
+  return row
+
+
+@cached_for_testing(date_for_sig=CUR_WEEK)
 def bulk_rate_validation_pass(
-  pbar: Progress,
+  pbar: Annotated[Progress, "ignore_for_sig"],
   storenum: StoreNum,
-  bulk_dat: BulkRateDataType,
+  bulk_dat: Annotated[BulkRateDataType, "ignore_for_sig"],
 ) -> BulkDataPackage:
   bulk_dat = bulk_dat.map(fix_decimals)
   bulk_dat = bulk_dat.replace(NULL_VALUES, value=None)
@@ -175,8 +199,9 @@ def bulk_rate_validation_pass(
       description=f"Validating {storenum:0>3} bulk rates",
       total=len(bulk_dat),
       clear_when_finished=True,
-    )(apply_model_to_df)(),
-    model=BulkRateModel,
+      # )(apply_model_to_df)(),
+    )(init_bulk_types)(),
+    # model=BulkRateModel,
     axis=1,
     result_type="broadcast",
   )
@@ -191,12 +216,13 @@ def bulk_rate_validation_pass(
   )
 
 
+@cached_for_testing(date_for_sig=CUR_WEEK)
 def itemized_inv_first_validation_pass(
-  pbar: Progress,
+  pbar: Annotated[Progress, "ignore_for_sig"],
   storenum: StoreNum,
-  itemized_invoice_data: ItemizedInvoiceDataType,
-  addr_info: AddressInfoType,
-  errors: dict[int, list[Any]] = None,
+  itemized_invoice_data: Annotated[ItemizedInvoiceDataType, "ignore_for_sig"],
+  addr_info: Annotated[AddressInfoType, "ignore_for_sig"],
+  errors: Annotated[dict[int, list[Any]], "ignore_for_sig"] = None,
 ) -> ItemizedDataPackage:
   itemized_invoice_data[ItemizedInvoiceCols.Store_Number] = storenum
   itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
@@ -255,6 +281,7 @@ def apply_addrinfo_and_initial_validation(
   model: Type[CustomBaseModel],
   addr_data: AddressInfoType,
 ) -> Series:
+  # sourcery skip: remove-empty-nested-block, remove-redundant-if
   """
   Apply a model to a row of a DataFrame.
 
@@ -264,6 +291,9 @@ def apply_addrinfo_and_initial_validation(
   :param model: The model to apply.
   :return: The transformed row.
   """
+
+  if row[ItemizedInvoiceCols.CustNum] == "101":
+    pass
 
   context["model"] = model
 
@@ -299,7 +329,15 @@ def process_item_lines(
   bulk_rate_data: dict[StoreNum, BulkRateDataType],
   buydowns_data: BuydownsDataType,
   vap_data: VAPDataType,
-) -> DataFrame:
+) -> DataFrame:  # sourcery skip: remove-redundant-if
+  if group.empty:
+    return group
+
+  # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
+
+  # if invoicenum in [90198]:
+  #   pass
+
   group = apply_vap(group, vap_data)
   group = apply_buydowns(group, buydowns_data)
 
@@ -463,9 +501,18 @@ def identify_multipack(group: DataFrame):
         multipack_quantity = int(match["Quantity"])
         multipack_price = Decimal(match["Price"])
 
+        if multipack_quantity == 1:
+          discount_per_item = row[ItemizedInvoiceCols.Inv_Price] - multipack_price
+          if discount_per_item > 0:
+            group.loc[index, ItemizedInvoiceCols.Acct_Promo_Name] = "Customer Appreciation"
+            group.loc[index, ItemizedInvoiceCols.Acct_Discount_Amt] = discount_per_item
+          continue
+
         multipack_price_per_item = multipack_price / multipack_quantity
 
         discount_per_item = row[ItemizedInvoiceCols.Inv_Price] - multipack_price_per_item
+        if discount_per_item <= 0:
+          continue
 
         # TODO check if this mix n match is a manufacturer multipack or a retailer multipack
         if multipack_desc := VALID_MANUFACTURER_MULTIPACK_PATTERNS.get(
@@ -486,6 +533,9 @@ def identify_multipack(group: DataFrame):
 
 def identify_loyalty(group: DataFrame) -> DataFrame:
   # sourcery skip: extract-method
+
+  # if not group.empty and group[ItemizedInvoiceCols.Invoice_Number].iloc[0] in [331473]:
+  #   pass
 
   # grab the dept_id of each row
   dept_ids = group[ItemizedInvoiceCols.Dept_ID]

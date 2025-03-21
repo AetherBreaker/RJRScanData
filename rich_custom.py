@@ -1,7 +1,6 @@
 from copy import deepcopy
-from functools import partial
 from itertools import batched
-from typing import Any, Callable, Optional, Self, TextIO
+from typing import Any, Callable, Literal, Optional, Self, TextIO
 
 from logging_config import RICH_CONSOLE
 from rich import get_console
@@ -216,46 +215,46 @@ class RemainingColumn(ProgressColumn):
   def __init__(self, title: str, items: dict[int, str], *args, **kwargs):
     self.title = title
     self.items = {k: str(v) for k, v in deepcopy(items).items()}
+    self.render_items = {k: str(v) for k, v in deepcopy(items).items()}
     self.num_cols = 6
+    self._is_empty = False
 
     self.max_width = max(map(lambda x: len(str(x)), items.values()))
 
     super().__init__(*args, **kwargs)
 
-  def render(self, task: "Task") -> RenderableType:
-    if isinstance(task.description, str) and "," in task.description:
-      items_to_remove = task.description.split(",")
-    elif task.description == self.last_desc:
-      items_to_remove = [""]  # Prevents infinite loop
-    else:
-      items_to_remove = [task.description]
-    self.last_desc = task.description
+  def update_items(self, *items_to_remove: tuple[str | int]) -> None:
     if items_to_remove != [""]:
       for item in items_to_remove:
         if item in self.items:
-          self.items[item] = " " * self.max_width
+          self.items[item] = None
         else:
           pass
 
-    vert_pad = 1 if any("\n" in item for item in self.items.values()) else 0
+    self._is_empty = all(item is None for item in self.items.values())
+
+    self.update_render_items()
+
+  def update_render_items(self):
+    for key, val in self.items.items():
+      self.render_items[key] = " " * self.max_width if val is None else val
+
+  def render(self, task: "Task") -> RenderableType:
+    vert_pad = 1 if any("\n" in item for item in self.render_items.values()) else 0
 
     remaining_grid = Table.grid(
       padding=(vert_pad, 1),
       # expand=True,
     )
 
-    for row in batched(self.items.values(), self.num_cols):
+    for row in batched(self.render_items.values(), self.num_cols):
       remaining_grid.add_row(*row)
 
     return Panel.fit(remaining_grid, title=self.title, border_style="blue", highlight=True)
 
-
-def update_remaining(
-  storenum: int,
-  remaining_pbar: Progress,
-  remaining_task: Task,
-) -> None:
-  remaining_pbar.update(remaining_task, description=storenum, advance=1)
+  @property
+  def is_empty(self) -> bool:
+    return self._is_empty
 
 
 class LiveCustom(Live):
@@ -298,48 +297,84 @@ class LiveCustom(Live):
       get_renderable=get_renderable,
     )
 
+  def wrap_update_remaining(self, rem_col_key: int) -> Callable[[int], None]:
+    rem = self.remaining_cols[rem_col_key]
+
+    def wrapper(*storenums: tuple[int | str]) -> None:
+      rem.update_items(*storenums)
+      if rem._is_empty:
+        self.remove_remaining(rem_col_key)
+
+    return wrapper
+
   def init_remaining(
     self,
     *args: tuple[tuple[dict[int, str], str]],
+    performant: bool = True,
   ) -> tuple[Callable[[int], None]]:  # sourcery skip: class-extract-method
-    remaining_pbars = []
-    remaining_tasks = []
+    self.remaining_pbars: dict[int, Progress] = {}
+    self.remaining_cols: dict[int, RemainingColumn] = {}
 
     update_callables = []
 
-    for remaining_items, title in args:
+    for index, (remaining_items, title) in enumerate(args):
+      rem_col = RemainingColumn(title, remaining_items)
       remaining_pbar = Progress(
-        RemainingColumn(title, remaining_items),
+        rem_col,
         console=RICH_CONSOLE,
       )
 
-      remaining_task = remaining_pbar.add_task("", total=len(remaining_items))
+      remaining_pbar.add_task(description=title, total=len(remaining_items))
 
-      remaining_pbars.append(remaining_pbar)
-      remaining_tasks.append(remaining_task)
+      self.remaining_pbars[index] = remaining_pbar
+      self.remaining_cols[index] = rem_col
 
       update_callables.append(
-        partial(update_remaining, remaining_pbar=remaining_pbar, remaining_task=remaining_task)
+        self.wrap_update_remaining(index),
       )
 
-    self.remaining_pbars = remaining_pbars
-    self.remaining_tasks = remaining_tasks
+    self.display_method: Literal["pretty", "performant", "single"] = ...
 
+    if len(self.remaining_pbars) == 1:
+      self.display_method = "single"
+    elif performant:
+      self.display_method = "performant"
+    else:
+      self.display_method = "pretty"
+
+    self.update_display()
+
+    return tuple(update_callables) if len(update_callables) > 1 else update_callables[0]
+
+  def update_display(self):
     display_table = Table.grid()
-    sub_table = Table.grid()
-    sub_table.add_row(*remaining_pbars)
-    display_table.add_row(
-      Panel.fit(
-        sub_table,
-        title="Remaining",
-        border_style="blue",
-      ),
-    )
+
+    match self.display_method:
+      case "pretty":
+        sub_table = Table.grid()
+        sub_table.add_row(*self.remaining_pbars.values())
+        display_table.add_row(
+          Panel.fit(
+            sub_table,
+            title="Remaining",
+            border_style="blue",
+          ),
+        )
+      case "performant":
+        sub_table = Table.grid()
+        sub_table.add_row(*self.remaining_pbars.values())
+        display_table.add_row(sub_table)
+      case "single":
+        display_table.add_row(*self.remaining_pbars.values())
+
     display_table.add_row(self.pbar)
 
     self.update(display_table, refresh=True)
 
-    return tuple(update_callables) if len(update_callables) > 1 else update_callables[0]
+  def remove_remaining(self, key: int):
+    self.remaining_pbars.pop(key)
+    self.remaining_cols.pop(key)
+    self.update_display()
 
   def clear_remaining(self):
     self.remaining_pbars = None

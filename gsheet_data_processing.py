@@ -22,7 +22,7 @@ from types_column_names import (
   GSheetsVAPDiscountsCols,
 )
 from types_custom import AddressInfoType, BuydownsDataType, UnitOfMeasureDataType, VAPDataType
-from utils import SingletonType
+from utils import SingletonType, cached_for_testing
 from validation_gsheetdata import (
   BuydownsModel,
   StoreInfoModel,
@@ -81,6 +81,17 @@ def get_all_records(
 
 class SheetCache(metaclass=SingletonType):
   def __init__(self):
+    info, bds, vap, uom = self.caching_passthru()
+
+    self.info: AddressInfoType = info.set_index(GSheetsStoreInfoCols.StoreNum)
+    # self.bds = bds.set_index(GSheetsBuydownsCols.UPC)
+    self.bds: BuydownsDataType = bds
+    # self.vap: VAPDataType = vap.set_index(GSheetsVAPDiscountsCols.UPC)
+    self.vap: VAPDataType = vap
+    self.uom: UnitOfMeasureDataType = uom.set_index(GSheetsUnitsOfMeasureCols.UPC)
+
+  @cached_for_testing(pickle_path_override="caching_passthru")
+  def caching_passthru(self):
     store_info_sheet = SERVICE_ACCOUNT.open_by_key(STORE_INFO_SHEET_ID).worksheet(
       STORE_INFO_SHEETNAME
     )
@@ -120,12 +131,7 @@ class SheetCache(metaclass=SingletonType):
     vap = vap.apply(apply_model_to_df, model=VAPDiscountsModel, axis=1, result_type="broadcast")
     uom = uom.apply(apply_model_to_df, model=UnitsOfMeasureModel, axis=1, result_type="broadcast")
 
-    self.info: AddressInfoType = info.set_index(GSheetsStoreInfoCols.StoreNum)
-    # self.bds = bds.set_index(GSheetsBuydownsCols.UPC)
-    self.bds: BuydownsDataType = bds
-    # self.vap: VAPDataType = vap.set_index(GSheetsVAPDiscountsCols.UPC)
-    self.vap: VAPDataType = vap
-    self.uom: UnitOfMeasureDataType = uom.set_index(GSheetsUnitsOfMeasureCols.UPC)
+    return info, bds, vap, uom
 
 
 if __name__ == "__main__":

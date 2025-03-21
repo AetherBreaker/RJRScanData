@@ -1,11 +1,13 @@
+import contextlib
+
 if __name__ == "__main__":
   from logging_config import configure_logging
 
   configure_logging()
 
 import pickle
-import sys
-from datetime import date
+from collections.abc import Callable, Mapping, Sequence
+from datetime import datetime
 from decimal import ROUND_FLOOR, Decimal, InvalidOperation
 from ftplib import FTP
 from functools import wraps
@@ -17,9 +19,9 @@ from os import get_terminal_size
 from pathlib import Path
 from re import match
 from threading import Lock
-from typing import Any, Callable, Sequence
+from typing import Any
 
-from dateutil.relativedelta import MO, SU, relativedelta
+from dateutil.relativedelta import MO, SU, WE, relativedelta
 from dateutil.utils import today
 from numpy import nan
 from rich.progress import Progress, TaskID
@@ -36,24 +38,16 @@ FTP_CREDS_FILE = (CWD / __file__).with_name("ftp_creds.json")
 DECIMAL_MAX_DIGITS = Decimal("1.00")
 TERMINAL_WIDTH = get_terminal_size().columns
 
-if getattr(sys, "frozen", False):
-  # clear pyinstaller deprecation warning
-  sys.stdout.write("\033[1A\033[2K" * ((TERMINAL_WIDTH // 166) + 1))
+RESULTS_PICKLE_CACHE = CWD / "_testing_pickles"
+if __debug__:  # noqa
+  RESULTS_PICKLE_CACHE.mkdir(exist_ok=True)
 
+IGNORE_ARGTYPES = (Progress,)
+IGNORE_KWARG_KEYS = ("errors", "buydowns_data", "vap_data", "live")
 
-def taskgen(progress: Progress, *args, **kwargs):
-  def decorator(func: Callable):
-    task = progress.add_task(*args, **kwargs)
-
-    @wraps(wrapped=func)
-    def wrapper(*args, **kwargs):
-      result = func(*args, **kwargs)
-      progress.update(task, advance=1)
-      return result
-
-    return wrapper
-
-  return decorator
+# if getattr(sys, "frozen", False):
+#   # clear pyinstaller deprecation warning
+#   sys.stdout.write("\033[1A\033[2K" * ((TERMINAL_WIDTH // 166) + 1))
 
 
 def taskgen_whencalled(
@@ -61,29 +55,29 @@ def taskgen_whencalled(
   description: str,
   total: int,
   clear_when_finished=False,
-  *args,
-  **kwargs,
-) -> Callable[[Callable], Callable]:
-  def decorator[T: Callable[[Any], Any]](func: T) -> Callable[[Any], T]:
+  *pbar_args,
+  **pbar_kwargs,
+):
+  def decorator[**P, R, T: Callable[P, R]](func: T) -> Callable[[Any], T]:
     def starts_task(*altargs, **altkwargs) -> T:
-      kwargs.update(description=description, total=total)
+      pbar_kwargs.update(description=description, total=total)
       # If the task is started with different arguments, we override the original ones
-      if altargs and args:
-        final_args = (*altargs, *(args[len(altargs) :]))
+      if altargs and pbar_args:
+        final_args = (*altargs, *(pbar_args[len(altargs) :]))
       elif altargs:
         final_args = altargs
       else:
-        final_args = args
+        final_args = pbar_args
 
       if altkwargs:
-        kwargs.update(altkwargs)
+        pbar_kwargs.update(altkwargs)
 
-      taskid = progress.add_task(*final_args, **kwargs)
+      taskid = progress.add_task(*final_args, **pbar_kwargs)
 
       task = [task for task in progress.tasks if task.id == taskid][0]
 
-      @wraps(wrapped=func)
-      def wrapper(*args, **kwargs):
+      @wraps(func)
+      def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         result = func(*args, **kwargs)
         progress.update(taskid, advance=1)
         if clear_when_finished and task.finished:
@@ -144,109 +138,191 @@ def login_ftp(ftp: FTP) -> None:
   ftp.login(user=creds["FTP_USER"], passwd=creds["FTP_PWD"])
 
 
-def get_last_sun() -> date:
+def get_last_sun(additional_shift: int = 0) -> datetime:
   now = today()
-  return now + relativedelta(weekday=SU(-1))
+  return now + relativedelta(weekday=SU(-1)) + relativedelta(weeks=additional_shift)
 
 
-def get_last_mon() -> date:
+def get_last_mon(additional_shift: int = 0) -> datetime:
   now = today()
-  return now + relativedelta(weekday=MO(-1))
+  return now + relativedelta(weekday=MO(-1)) + relativedelta(weeks=additional_shift)
 
 
-def rjr_start_end_dates() -> tuple[date, date]:
-  end_date = get_last_mon()
+def rjr_start_end_dates(additional_shift: int = 0) -> tuple[datetime, datetime]:
+  end_date = get_last_mon(additional_shift)
   start_date = end_date - relativedelta(weeks=1)
   return start_date, end_date
 
 
-def pm_start_end_dates() -> tuple[date, date]:
-  end_date = get_last_sun()
+def pm_start_end_dates(additional_shift: int = 0) -> tuple[datetime, datetime]:
+  end_date = get_last_sun(additional_shift)
   start_date = end_date - relativedelta(weeks=1)
   return start_date, end_date
 
 
-def get_full_dates() -> tuple[date, date]:
-  rjr = rjr_start_end_dates()
-  pm = pm_start_end_dates()
+def get_full_dates(week_shift: int = 0) -> tuple[datetime, datetime]:
+  rjr = rjr_start_end_dates(week_shift)
+  pm = pm_start_end_dates(week_shift)
 
   start_date = min(rjr[0], pm[0])
   end_date = max(rjr[1], pm[1])
   return start_date, end_date
 
 
-RESULTS_PICKLE_CACHE = CWD / "_testing_pickles"
-if __debug__:  # noqa
-  RESULTS_PICKLE_CACHE.mkdir(exist_ok=True)
+def get_week_of(week_shift: int = 0) -> datetime:
+  """Returns the end date of the week for the current date"""
+  now = today() + relativedelta(weeks=week_shift)
+  return now + relativedelta(weekday=WE(0))  # Wednesday of target week
 
 
-def cached_for_testing(func: Callable):
-  """
-  decorator to pickle the results of a function to disk for testing purposes
+class DoNotCacheException[**P](Exception):
+  """Exception to indicate that a function's return should not be cached by cached_for_testing"""
 
-  Arguments:
-      func -- Func to cache the return of
+  def __init__(self, *args, intended_return: Any = None, **kwargs):
+    self.__intended_return = intended_return
+    super().__init__(*args)
 
-  Returns:
-      The unpickled result of the function if it exists, otherwise the result of the function
-  """
-  if not __debug__:
-    return func
+  @property
+  def intended_return(self) -> Any:
+    """The intended return value of the function that raised this exception"""
+    return self.__intended_return
 
-  @wraps(func)
-  def wrapper(*args, **kwargs):
-    # hash the function name and the arguments to get a unique filename
-    arghash = md5(usedforsecurity=False)
+
+def process_arg_signature(
+  arg: Any, hash_list: list[Any], func: Callable, annotations: list | dict = None
+):
+  if func.__qualname__.split(".")[0] == arg.__class__.__qualname__:
+    return
+  if (
+    annotations
+    and hasattr(annotations, "__metadata__")
+    and "ignore_for_sig" in annotations.__metadata__
+  ):
+    return
+  if isinstance(arg, (str, int, float)):
+    hash_list.append(arg)
+  elif isinstance(arg, Mapping):
+    for key, value in arg.items():
+      if annotations and (anno := annotations.get(key)):
+        if hasattr(anno, "__metadata__") and "ignore_for_sig" in anno.__metadata__:
+          continue
+      if (
+        key in IGNORE_KWARG_KEYS
+        or isinstance(key, IGNORE_ARGTYPES)
+        or isinstance(value, IGNORE_ARGTYPES)
+      ):
+        continue
+      process_arg_signature(key, hash_list, func)
+      # else:
+      #   with contextlib.suppress(TypeError):
+      #     hash.update(str(key).encode())
+      process_arg_signature(value, hash_list, func)
+  elif isinstance(arg, Sequence):
+    for index, item in enumerate(arg):
+      if annotations:
+        with contextlib.suppress(IndexError):
+          anno = annotations[index]
+          if (
+            anno and hasattr(annotations, "__metadata__") and "ignore_for_sig" in anno.__metadata__
+          ):
+            continue
+      if isinstance(item, IGNORE_ARGTYPES):
+        continue
+      process_arg_signature(item, hash_list, func)
+  #     else:
+  #       with contextlib.suppress(TypeError):
+  #         hash.update(str(item).encode())
+  # else:
+  #   with contextlib.suppress(TypeError):
+  #     hash.update(str(arg).encode())
+
+
+def cached_for_testing[**TP, TR](
+  _func: Callable[TP, TR] | None = None,
+  *,
+  pickle_path_override: str = None,
+  hash_for_sig: bool = False,
+  date_for_sig: datetime = None,
+) -> Callable[TP, TR] | Callable[[Callable[TP, TR]], Callable[TP, TR]]:
+  if pickle_path_override is not None:
+    pickle_path_override = (
+      pickle_path_override
+      if pickle_path_override.endswith(".pickle")
+      else pickle_path_override + ".pickle"
+    )
+
+  def cached_for_testing_under[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    """
+    decorator to pickle the results of a function to disk for testing purposes
+
+    Arguments:
+        func -- Func to cache the return of
+
+    Returns:
+        The unpickled result of the function if it exists, otherwise the result of the function
+    """
+    # if not __debug__:
+    #   return func
+
+    pickle_path = RESULTS_PICKLE_CACHE / func.__module__
+    pickle_path.mkdir(exist_ok=True)
+
+    if hash_for_sig:
+      arghash = md5(usedforsecurity=False)
+
     func_path = f"{func.__module__}.{func.__name__}"
-    arghash.update(func_path.encode())
-    for arg in args:
-      if isinstance(arg, (str, int, float)):
-        arghash.update(str(arg).encode())
-      elif isinstance(arg, Sequence):
-        for item in arg:
-          if isinstance(item, (str, int, float)):
+    # arghash.update(func_path.encode())
+
+    @wraps(func)
+    def caching_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+      if pickle_path_override:
+        filename = pickle_path / pickle_path_override
+      else:
+        # Process all args to form a unique function signature
+        # hash the function name and the arguments to get a unique filename
+        arg_anno = [v for k, v in func.__annotations__.items() if k not in kwargs and k != "return"]
+        kwarg_anno = {
+          k: v for k, v in func.__annotations__.items() if k in kwargs and k != "return"
+        }
+
+        hash_list = [func_path]
+
+        process_arg_signature(args, hash_list, func, arg_anno)
+        process_arg_signature(kwargs, hash_list, func, kwarg_anno)
+
+        pass
+
+        # create the filename from the hash
+        if hash_for_sig:
+          for item in hash_list:
             arghash.update(str(item).encode())
-          else:
-            try:
-              arghash.update(str(item).encode())
-            except TypeError:
-              pass
+          filename = pickle_path / f"{func.__name__}_{arghash.hexdigest()}.pickle"
+        else:
+          strfixed = "_".join([str(item).replace(" ", "_").replace("-", "_") for item in hash_list])
+          filename = (
+            (pickle_path / f"{func.__name__}_{str(date_for_sig.date())}_{strfixed}.pickle")
+            if date_for_sig is not None
+            else pickle_path / f"{func.__name__}_{strfixed}.pickle"
+          )
+        pass
+
+      # if the file exists, load it and return the result
+      # otherwise, call the function and save the result to disk
+      if filename.exists():
+        with filename.open("rb") as file:
+          return pickle.load(file)
       else:
         try:
-          arghash.update(str(arg).encode())
-        except TypeError:
-          pass
+          result = func(*args, **kwargs)
+        except DoNotCacheException as e:
+          return e.intended_return
+        with filename.open("wb") as file:
+          pickle.dump(result, file)
+        return result
 
-    for key, value in kwargs.items():
-      arghash.update(key.encode())
-      if isinstance(value, (str, int, float)):
-        arghash.update(str(value).encode())
-      elif isinstance(value, Sequence):
-        for item in value:
-          if isinstance(item, (str, int, float)):
-            arghash.update(str(item).encode())
-          else:
-            try:
-              arghash.update(str(item).encode())
-            except TypeError:
-              pass
-      else:
-        try:
-          arghash.update(str(value).encode())
-        except TypeError:
-          pass
+    return caching_wrapper
 
-    filename = RESULTS_PICKLE_CACHE / f"{arghash.hexdigest()}.pickle"
-    if filename.exists():
-      with filename.open("rb") as file:
-        return pickle.load(file)
-    else:
-      result = func(*args, **kwargs)
-      with filename.open("wb") as file:
-        pickle.dump(result, file)
-      return result
-
-  return wrapper
+  return cached_for_testing_under if _func is None else cached_for_testing_under(_func)
 
 
 class SingletonType(type):

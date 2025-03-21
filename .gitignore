@@ -200,18 +200,21 @@ pip-selfcheck.json
 *.vsix
 
 # Project Specific
-/Scan Data Documentation
+/Scan Data Documentation/
+/_testing_pickles/
+Test Scan Files/
+logs/
+Validation Reports/
+/item_lines/
+/submitted_files/
+
 *.csv
+*.dat
+
 /sft-scan-data-1c4d1707c2d5.json
 /store_ip_address_lookup.json
 /store_sql_creds.json
 /ftp_creds.json
-/_testing_pickles
-Test Scan Files/
-Test Scan Files/*
-logs/
-logs/*
-Validation Reports/
-Validation Reports/*
 /max_width.txt
 B56192_*_*_SWEETFIRETOBACCO.txt
+/____testing_pickles/

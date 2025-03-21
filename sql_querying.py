@@ -3,11 +3,11 @@ if __name__ == "__main__":
 
   configure_logging()
 
+import inspect
 import json
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
-from functools import partial
 from itertools import product
-from logging import getLogger
+from logging import INFO, getLogger
 from pathlib import Path
 from threading import Lock
 from typing import Literal, cast
@@ -26,8 +26,8 @@ from rich_custom import LiveCustom
 from sql_query_builders import (
   update_database_name,
 )
-from types_column_names import ColNameEnum
 from types_custom import (
+  ColNameEnum,
   QueryDict,
   QueryName,
   QueryPackage,
@@ -37,13 +37,18 @@ from types_custom import (
   StoreNum,
   StoreResultsPackage,
 )
-from utils import cached_for_testing
+from utils import DoNotCacheException, cached_for_testing, get_full_dates, get_week_of
 
 logger = getLogger(__name__)
+logger.setLevel(INFO)
 
 
 CWD = Path.cwd()
 
+
+WEEK_SHIFT = -3
+
+CUR_WEEK = get_week_of(WEEK_SHIFT)
 
 LAST_USED_DB_QUERYFILE = (CWD / __file__).with_name("last used database name.sql")
 PCA_SQL_CREDS_PATH = (CWD / __file__).with_name("store_sql_creds.json")
@@ -214,10 +219,14 @@ def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsPackage:
   return results
 
 
+@cached_for_testing(date_for_sig=CUR_WEEK)
 def get_store_data(
   storenum: StoreNum,
   queries: QueryDict,
-) -> StoreResultsPackage:
+) -> StoreResultsPackage:  # sourcery skip: raise-from-previous-error
+  is_caching = inspect.stack()[1][3] == "caching_wrapper"
+  empty_return = StoreResultsPackage(storenum=storenum)
+
   logger.debug(
     f"SFT {storenum:0>3}: Getting Store Data",
   )
@@ -226,7 +235,17 @@ def get_store_data(
     logger.debug(f"SFT {storenum:0>3}: Finished querying store")
   except NoConnectionError:
     logger.warning(f"SFT {storenum:0>3}: Failed to connect to store SQL server")
-    return StoreResultsPackage(storenum=storenum)
+    logger.info(f"SFT {storenum:0>3}: Retrying connection to store SQL server")
+    try:
+      query_results = query_store(storenum, queries)
+    except NoConnectionError:
+      logger.warning(f"SFT {storenum:0>3}: Connection failed on retry")
+      if is_caching:
+        raise DoNotCacheException(
+          f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
+        )
+      else:
+        return empty_return
 
   except Exception as e:
     exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
@@ -247,34 +266,43 @@ def get_store_data(
             exc_info=(exc_type, exc_val, exc_tb),
             stack_info=True,
           )
-      elif exc_type is NoConnectionError:
-        logger.error(
-          f"SFT {storenum:0>3}: Failed to connect to store SQL server",
-          exc_info=(exc_type, exc_val, exc_tb),
-          stack_info=True,
-        )
       else:
         logger.error(
           f"SFT {storenum:0>3}: An unexpected exception occurred while connecting to store SQL server",
           exc_info=(exc_type, exc_val, exc_tb),
           stack_info=True,
         )
-    return StoreResultsPackage(storenum=storenum)
+    if is_caching:
+      raise DoNotCacheException(
+        f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
+      )
+    else:
+      return empty_return
 
   store_data = {}
 
   for query_name, query_result in query_results.items():
     if not query_result:
       logger.warning(f"SFT {storenum:0>3}: No results found for {query_name} query")
-      return StoreResultsPackage(storenum=storenum)
+      if is_caching:
+        raise DoNotCacheException(
+          f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
+        )
+      else:
+        return empty_return
 
     raw = [tuple(row) for row in query_result]
 
     if not (cols := queries.get(query_name).cols):
       logger.warning(f"SFT {storenum:0>3}: No columns found for {query_name} query")
-      return StoreResultsPackage(storenum=storenum)
+      if is_caching:
+        raise DoNotCacheException(
+          f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
+        )
+      else:
+        return empty_return
 
-    if issubclass(cols, ColNameEnum):
+    if not isinstance(cols, list) and issubclass(cols, ColNameEnum):
       cols = cols.init_columns()
 
     store_data[query_name] = DataFrame(
@@ -343,7 +371,7 @@ DEFAULT_STORES_LIST = [
   55,
   56,
   57,
-  58,
+  # 58,
   59,
   60,
   62,
@@ -359,12 +387,14 @@ DEFAULT_STORES_LIST = [
   88,
 ]
 
-# DEFAULT_STORES_LIST = [82]
+# DEFAULT_STORES_LIST = [62]
 
 
-@cached_for_testing
-def pre_query_all_stores_multithreaded[q_name: QueryName](
-  queries: dict[q_name, QueryPackage], storenums: list[StoreNum]
+# @cached_for_testing(
+#   pickle_path_override=f"query_all_stores_multithreaded_bulk_rates_invoices_{str(cur_week.date())}_{"_".join(str(x) for x in DEFAULT_STORES_LIST)}"
+# )
+def query_all_stores_multithreaded[q_name: QueryName](
+  queries: dict[q_name, QueryPackage], storenums: list[StoreNum] = DEFAULT_STORES_LIST
 ) -> dict[q_name, dict[StoreNum, DataFrame]]:
   store_querying_futures: list[Future] = []
 
@@ -376,17 +406,17 @@ def pre_query_all_stores_multithreaded[q_name: QueryName](
   ) as live:
     pbar = live.pbar
 
-    remaining_updaters = {
-      query_name: updater
-      for query_name, updater in zip(
-        queries.keys(),
-        live.init_remaining(
-          *(
-            (items, f"{query_name.capitalize().replace("_", " ")} Queries")
-            for query_name in queries.keys()
-          )
-        ),
+    updaters = live.init_remaining(
+      *(
+        (items, f"{query_name.capitalize().replace("_", " ")} Queries")
+        for query_name in queries.keys()
       )
+    )
+
+    updaters = updaters if isinstance(updaters, tuple) else (updaters,)
+
+    remaining_updaters = {
+      query_name: updater for query_name, updater in zip(queries.keys(), updaters)
     }
     with ThreadPoolExecutor(
       max_workers=len(storenums) * len(queries),
@@ -431,10 +461,6 @@ def pre_query_all_stores_multithreaded[q_name: QueryName](
 
   return query_results
 
-
-query_all_stores_multithreaded = partial(
-  cached_for_testing(pre_query_all_stores_multithreaded), storenums=DEFAULT_STORES_LIST
-)
 
 if __name__ == "__main__":
   from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query

@@ -4,15 +4,14 @@ if __name__ == "__main__":
   configure_logging()
 
 from collections import UserDict
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 from logging import getLogger
-from typing import Any, Callable, Literal, NamedTuple, NewType, TypedDict
+from typing import Any, Callable, Literal, NamedTuple, TypedDict
 
 from pandas import DataFrame
 from pydantic import BaseModel, ValidationError
 from pyodbc import Row
 from pypika.queries import QueryBuilder
-from types_column_names import ColNameEnum
 
 logger = getLogger(__name__)
 
@@ -44,6 +43,49 @@ class StatesEnum(Enum):
   OH = "OH"
   IA = "IA"
   WI = "WI"
+
+
+class ColNameEnum(StrEnum):
+  __exclude__ = []
+  __init_include__ = []
+
+  @classmethod
+  def ordered_column_names(cls, *columns: list[str]) -> list[str]:
+    columns = [str(column) for column in columns]
+    return [str(column) for column in cls if str(column) in columns]
+
+  @classmethod
+  def all_columns(cls) -> list[str]:
+    return [
+      str(column)
+      for column in cls
+      if str(column) not in cls.__exclude__ and not str(column).startswith("_")
+    ]
+
+  @classmethod
+  def init_columns(cls) -> list[str]:
+    if not cls.__init_include__:
+      return cls.all_columns()
+    return [
+      str(column)
+      for column in cls
+      if str(column) in cls.__init_include__ and not str(column).startswith("_")
+    ]
+
+  @classmethod
+  def testing_columns(cls) -> list[str]:
+    return [str(column) for column in cls if str(column) not in cls.__exclude__]
+
+  @classmethod
+  def true_all_columns(cls) -> list[str]:
+    return [str(column) for column in cls]
+
+  @staticmethod
+  def _generate_next_value_(name, start, count, last_values):
+    """
+    Return the member name.
+    """
+    return name
 
 
 class DeptIDsEnum(ColNameEnum):
@@ -237,12 +279,10 @@ type QueryName = str
 type QueryDict = dict[QueryName, QueryPackage]
 type QueryResultRaw = list[Row]
 
-ColumnsEnumType = NewType("ColumnsEnumType", ColNameEnum)
-
 
 class QueryPackage(NamedTuple):
   query: QueryBuilder
-  cols: ColumnsEnumType | list[str]
+  cols: type[ColNameEnum] | list[str]
 
 
 class SQLCreds(TypedDict):
@@ -292,3 +332,8 @@ class StoreResultsPackage(UserDict):
 
 class QueryResultsPackage(StoreResultsPackage):
   data: dict[QueryName, QueryResultRaw]
+
+
+class classproperty(property):
+  def __get__(self, owner_self, owner_cls):
+    return self.fget(owner_cls)

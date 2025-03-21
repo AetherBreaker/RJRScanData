@@ -10,9 +10,9 @@ from rich.traceback import Traceback
 
 RICH_CONSOLE = Console()
 
-project_name = "RJRScanData"
+project_name = "ScanData"
 
-max_width = 39
+max_width = 40
 
 logging_timestamp_fmt = "%b, %d %a %I:%M %p"
 
@@ -163,7 +163,7 @@ def configure_logging():
   logging.setLogRecordFactory(FixedLogRecord)
 
   root = logging.getLogger()
-  root.setLevel(logging.DEBUG)
+  root.setLevel(logging.DEBUG if __debug__ else logging.INFO)
 
   debugging_file_handler = daily_debug_handler if LOGGING_TYPE == "daily" else per_run_debug_handler
   debugging_file_handler.setLevel(logging.DEBUG)
@@ -173,19 +173,11 @@ def configure_logging():
 
   # console_error_handler = logging.StreamHandler(sys.stderr)
   # console_error_handler.setLevel(logging.ERROR)
-
-  console_error_handler = FixedRichHandler(
-    level=logging.ERROR,
-    console=RICH_CONSOLE,
-    rich_tracebacks=True,
-    log_time_format=logging_timestamp_fmt,
-  )
-
   # console_info_handler = logging.StreamHandler(sys.stdout)
   # console_info_handler.setLevel(logging.INFO)
 
   console_info_handler = FixedRichHandler(
-    level=logging.INFO,
+    # level=logging.DEBUG if __debug__ else logging.INFO,
     console=RICH_CONSOLE,
     rich_tracebacks=True,
     log_time_format=logging_timestamp_fmt,
@@ -204,5 +196,15 @@ def configure_logging():
 
   root.addHandler(debugging_file_handler)
   root.addHandler(info_file_handler)
-  root.addHandler(console_error_handler)
+  # root.addHandler(console_error_handler)
   root.addHandler(console_info_handler)
+
+  # if __debug__:
+  #   console_debug_handler = FixedRichHandler(
+  #     level=logging.DEBUG,
+  #     console=RICH_CONSOLE,
+  #     rich_tracebacks=True,
+  #     log_time_format=logging_timestamp_fmt,
+  #   )
+  #   # console_debug_handler.setFormatter(formatter)
+  #   root.addHandler(console_debug_handler)

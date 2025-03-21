@@ -3,53 +3,12 @@ if __name__ == "__main__":
 
   configure_logging()
 
-from enum import StrEnum, auto
+from enum import auto
 from logging import getLogger
 
+from types_custom import ColNameEnum, classproperty
+
 logger = getLogger(__name__)
-
-
-class ColNameEnum(StrEnum):
-  __exclude__ = []
-  __init_include__ = []
-
-  @classmethod
-  def ordered_column_names(cls, *columns: list[str]) -> list[str]:
-    columns = [str(column) for column in columns]
-    return [str(column) for column in cls if str(column) in columns]
-
-  @classmethod
-  def all_columns(cls) -> list[str]:
-    return [
-      str(column)
-      for column in cls
-      if str(column) not in cls.__exclude__ and not str(column).startswith("_")
-    ]
-
-  @classmethod
-  def init_columns(cls) -> list[str]:
-    if not cls.__init_include__:
-      return cls.all_columns()
-    return [
-      str(column)
-      for column in cls
-      if str(column) in cls.__init_include__ and not str(column).startswith("_")
-    ]
-
-  @classmethod
-  def testing_columns(cls) -> list[str]:
-    return [str(column) for column in cls if str(column) not in cls.__exclude__]
-
-  @classmethod
-  def true_all_columns(cls) -> list[str]:
-    return [str(column) for column in cls]
-
-  @staticmethod
-  def _generate_next_value_(name, start, count, last_values):
-    """
-    Return the member name.
-    """
-    return name
 
 
 class RJRScanHeaders(ColNameEnum):
@@ -87,6 +46,43 @@ class RJRScanHeaders(ColNameEnum):
   manufacturer_multipack_desc = auto()
   account_loyalty_id_number = auto()
   coupon_desc = auto()
+
+
+class RJRNamesFinal(ColNameEnum):
+  outlet_name = "outletname"
+  outlet_number = "outletnumber"
+  address_1 = "address1"
+  address_2 = "address2"
+  city = "city"
+  state = "state"
+  zip = "zip"
+  transaction_date = "transactiondate"
+  market_basket_id = "marketbasketid"
+  scan_id = "scanid"
+  register_id = "registerid"
+  quantity = "quantity"
+  price = "price"
+  upc_code = "upccode"
+  upc_description = "upcdescription"
+  unit_of_measure = "unitofmeasure"
+  promotion_flag = "promotionflag"
+  outlet_multipack_flag = "outletmultipackflag"
+  outlet_multipack_quantity = "outletmultipackquantity"
+  outlet_multipack_discount_amt = "outletmultipackdiscountamt"
+  acct_promo_name = "acctpromoname"
+  acct_discount_amt = "acctdiscountamt"
+  manufacturer_discount_amt = "manufacturerdiscountamt"
+  pid_coupon = "pidcoupon"
+  pid_coupon_discount_amt = "pidcoupondiscountamt"
+  manufacturer_multipack_flag = "manufacturermultipackflag"
+  manufacturer_multipack_quantity = "manufacturermultipackquantity"
+  manufacturer_multipack_discount_amt = "manufacturermultipackdiscountamt"
+  manufacturer_promo_desc = "manufacturerpromodesc"
+  manufacturer_buydown_desc = "manufacturerbuydowndesc"
+  manufacturer_buydown_amt = "manufacturerbuydownamt"
+  manufacturer_multipack_desc = "manufacturermultipackdesc"
+  account_loyalty_id_number = "accountloyaltyidnumber"
+  coupon_desc = "coupondesc"
 
 
 class PMUSAScanHeaders(ColNameEnum):
@@ -284,3 +280,18 @@ class LazyEmployeesCols(ColNameEnum):
   StoreNum = auto()
   InfractionCount = auto()
   LastInfractionDate = auto()
+  FalseLoyaltyInfractioncount = auto()
+
+  @classproperty
+  def _index_col(cls):
+    return cls.EmployeeID
+
+
+class BadCustNumsCols(ColNameEnum):
+  CustNum = auto()
+  Ocurrences = auto()
+  LastInfractionDate = auto()
+
+  @classproperty
+  def _index_col(cls):
+    return cls.CustNum

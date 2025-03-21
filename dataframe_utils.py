@@ -19,16 +19,25 @@ def distribute_discount(prices: Series, quantities: Series, flat_discount: Decim
   subtotal: Decimal = (prices * quantities).sum()
   percentages_of_total: Series = prices / subtotal
 
-  distributed_discounts: Series = percentages_of_total * flat_discount
+  discount_per_item: Series = percentages_of_total * flat_discount
+
+  distributed_discounts = discount_per_item * quantities
 
   distributed_discounts = distributed_discounts.map(truncate_decimal)
+
+  # TODO
+  # TODO
+  # TODO
+  # TODO
 
   # fix rounding errors
   if distributed_discounts.sum() != flat_discount:
     difference = flat_discount - distributed_discounts.sum()
-    largest_index = prices.idxmax()
+    largest_index = prices.idxmin()
 
     distributed_discounts[largest_index] += difference
+
+  distributed_discounts = distributed_discounts.map(truncate_decimal)
 
   return distributed_discounts
 

@@ -1,5 +1,6 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
+from io import StringIO
 from logging import getLogger
 from pathlib import Path
 from string import Template
@@ -13,16 +14,18 @@ from dataframe_transformations import (
 )
 from gsheet_data_processing import SheetCache
 from logging_config import RICH_CONSOLE, configure_logging
-from pandas import concat
+from pandas import concat, read_csv
+from reporting_validation_errs import LoadReportingFiles
 from rich.progress import Progress
 from rich.table import Table
 from rich_custom import LiveCustom
 from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
-from sql_querying import DEFAULT_STORES_LIST, query_all_stores_multithreaded
+from sql_querying import DEFAULT_STORES_LIST, WEEK_SHIFT, query_all_stores_multithreaded
 from types_column_names import (
   BulkRateCols,
   GSheetsUnitsOfMeasureCols,
   ItemizedInvoiceCols,
+  RJRNamesFinal,
   RJRScanHeaders,
 )
 from types_custom import (
@@ -37,6 +40,9 @@ from types_custom import (
 from utils import get_full_dates, rjr_start_end_dates, taskgen_whencalled
 from validation_rjr import RJRValidationModel
 
+if __debug__:
+  from utils import cached_for_testing  # noqa: F401
+
 configure_logging()
 
 logger = getLogger(__name__)
@@ -45,12 +51,13 @@ logger = getLogger(__name__)
 CWD = Path.cwd()
 
 
-rjr_scan_file_format = Template(
+RJR_SCAN_FILE_FORMAT = Template(
   "B56192_${year}${month}${day}_${hour}${minute}_SWEETFIRETOBACCO.txt"
 )
 
 
-date_start, date_end = get_full_dates()
+rjr_scan_start_date, rjr_scan_end_date = rjr_start_end_dates(WEEK_SHIFT)
+date_start, date_end = get_full_dates(WEEK_SHIFT)
 queries: QueryDict = {
   "bulk_rates": QueryPackage(query=build_bulk_info_query(), cols=BulkRateCols),
   "invoices": QueryPackage(
@@ -81,7 +88,8 @@ PRECOMBINATION_ITEM_LINES_FOLDER = CWD / "item_lines"
 PRECOMBINATION_ITEM_LINES_FOLDER.mkdir(exist_ok=True)
 
 for storenum, invoices in itemized.items():
-  invoices.to_csv(PRECOMBINATION_ITEM_LINES_FOLDER / f"{storenum}.csv")
+  sorted_invoices = invoices.sort_values(ItemizedInvoiceCols.Invoice_Number)
+  sorted_invoices.to_csv(PRECOMBINATION_ITEM_LINES_FOLDER / f"{storenum:0>3}.csv", index=False)
 
 
 empty = []
@@ -108,7 +116,7 @@ def validate_and_concat_itemized(
   store_validating_futures: list[Future] = []
   with (
     ThreadPoolExecutor(
-      # max_workers=4,
+      # max_workers=1,
     ) as executor
   ):
     for storenum, invoices in data.items():
@@ -158,41 +166,15 @@ def validate_bulk(
   return bulk_results
 
 
-items = {storenum: str(storenum) for storenum in DEFAULT_STORES_LIST}
-
-
-with LiveCustom(
-  console=RICH_CONSOLE,
-  # transient=True,
-) as live:
-  pbar = live.pbar
-
-  remaining_callable = live.init_remaining((items, "Itemized Invoices"))
-  item_lines = validate_and_concat_itemized(pbar, remaining_callable, itemized)
-
-  if empty:
-    for storenum in empty:
-      bulk.pop(storenum)
-
-  remaining_callable = live.init_remaining((items, "Bulk Rates"))
-  bulk_rates = validate_bulk(pbar, remaining_callable, bulk)
-
-  item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
-
-  item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = item_lines[ItemizedInvoiceCols.Unit_Type].map(
-    unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure]
-  )
-
-  series_to_concat = []
-
-  item_lines.sort_values(
-    by=[
-      ItemizedInvoiceCols.Store_Number,
-      ItemizedInvoiceCols.DateTime,
-    ],
-    inplace=True,
-  )
-
+# @cached_for_testing
+def process_promo_data(
+  item_lines: ItemizedInvoiceDataType,
+  live: LiveCustom,
+  bulk_rates: BulkRateDataType,
+  pbar: Progress,
+  buydowns_data: dict,
+  vap_data: dict,
+) -> ItemizedInvoiceDataType:
   store_invoice_groups = item_lines.groupby(
     by=[ItemizedInvoiceCols.Store_Number, ItemizedInvoiceCols.Invoice_Number],
     as_index=False,
@@ -215,44 +197,115 @@ with LiveCustom(
     vap_data=vap_data,
   )
 
-  item_lines.to_csv("item_lines.csv")
+  return item_lines
 
-  new_rows = []
 
-  item_lines.apply(
-    taskgen_whencalled(
-      pbar,
-      "Validating RJR scan data",
-      len(item_lines),
-    )(apply_model_to_df_transforming)(),
-    axis=1,
-    new_rows=new_rows,
-    model=RJRValidationModel,
-    errors=errors,
-  )
+items = {storenum: str(storenum) for storenum in DEFAULT_STORES_LIST}
 
-  rjr_scan = concat(new_rows, axis=1).T
 
-  rjr_scan = rjr_scan[RJRScanHeaders.all_columns()]
+with LiveCustom(
+  console=RICH_CONSOLE,
+  # transient=True,
+) as live:
+  pbar = live.pbar
 
-  rjr_scan_start_date, rjr_scan_end_date = rjr_start_end_dates()
+  with LoadReportingFiles():
+    remaining_callable = live.init_remaining((items, "Itemized Invoices"))
+    item_lines = validate_and_concat_itemized(pbar, remaining_callable, itemized)
 
-  # filter by date range
-  rjr_scan = rjr_scan[
-    (rjr_scan[RJRScanHeaders.transaction_date] >= rjr_scan_start_date)
-    & (rjr_scan[RJRScanHeaders.transaction_date] < rjr_scan_end_date)
-  ]
+    if empty:
+      for storenum in empty:
+        bulk.pop(storenum)
 
-  now = datetime.now()
+    remaining_callable = live.init_remaining((items, "Bulk Rates"))
+    bulk_rates = validate_bulk(pbar, remaining_callable, bulk)
 
-  rjr_scan.to_csv(
-    rjr_scan_file_format.substitute(
-      year=f"{now.year:0>4}",
-      month=f"{now.month:0>2}",
-      day=f"{now.day:0>2}",
-      hour=f"{now.hour:0>2}",
-      minute=f"{now.minute:0>2}",
-    ),
-    sep="|",
-    index=False,
-  )
+    item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
+
+    item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = item_lines[
+      ItemizedInvoiceCols.Unit_Type
+    ].map(unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure])
+
+    series_to_concat = []
+
+    item_lines.sort_values(
+      by=[
+        ItemizedInvoiceCols.Store_Number,
+        ItemizedInvoiceCols.DateTime,
+      ],
+      inplace=True,
+    )
+
+    item_lines = process_promo_data(
+      item_lines=item_lines,
+      live=live,
+      bulk_rates=bulk_rates,
+      pbar=pbar,
+      buydowns_data=buydowns_data,
+      vap_data=vap_data,
+    )
+
+    item_lines.to_csv("item_lines.csv")
+
+    new_rows = []
+
+    item_lines.apply(
+      taskgen_whencalled(
+        pbar,
+        "Validating RJR scan data",
+        len(item_lines),
+      )(apply_model_to_df_transforming)(),
+      axis=1,
+      new_rows=new_rows,
+      model=RJRValidationModel,
+      errors=errors,
+    )
+
+    rjr_scan = concat(new_rows, axis=1).T
+
+    rjr_scan = rjr_scan[RJRScanHeaders.all_columns()]
+
+    # filter by date range
+    rjr_scan = rjr_scan[
+      (rjr_scan[RJRScanHeaders.transaction_date] >= rjr_scan_start_date)
+      & (rjr_scan[RJRScanHeaders.transaction_date] < rjr_scan_end_date)
+    ]
+
+    ftx_df = read_csv(
+      CWD / f"week{WEEK_SHIFT}_ftx.dat",
+      sep="|",
+      header=None,
+      names=RJRScanHeaders.all_columns(),
+      dtype=str,
+    )
+
+    rjr_df = read_csv(
+      StringIO(rjr_scan.to_csv(sep="|", index=False)),
+      sep="|",
+      header=0,
+      dtype=str,
+    )
+
+    rjr_scan = concat([rjr_df, ftx_df], ignore_index=True)
+
+    now = datetime.now()
+
+    rjr_scan.rename(
+      columns={
+        old_col: new_col
+        for old_col, new_col in zip(RJRScanHeaders.all_columns(), RJRNamesFinal.all_columns())
+      },
+      inplace=True,
+    )
+
+    rjr_scan.to_csv(
+      RJR_SCAN_FILE_FORMAT.substitute(
+        year=f"{now.year:0>4}",
+        month=f"{now.month:0>2}",
+        day=f"{now.day:0>2}",
+        hour=f"{now.hour:0>2}",
+        minute=f"{now.minute:0>2}",
+      ),
+      sep="|",
+      index=False,
+    )

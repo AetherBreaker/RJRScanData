@@ -10,15 +10,26 @@ from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BeforeValidator, Field
 from types_custom import DeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
+from utils import truncate_decimal
 from validation_config import CustomBaseModel
-from validators_shared import abs_decimal, map_to_upca, strip_string_to_digits, validate_unit_type
+from validators_shared import (
+  abs_decimal,
+  clear_default_custnums,
+  map_to_upca,
+  strip_string_to_digits,
+  validate_unit_type,
+)
 
 logger = getLogger(__name__)
 
 
 class ItemizedInvoiceModel(CustomBaseModel):
   Invoice_Number: int
-  CustNum: Annotated[str, Field(pattern=r"^[0-9a-zA-Z]+$", min_length=10)]
+  CustNum: Annotated[
+    Optional[str],
+    # Field(pattern=r"^[0-9a-zA-Z]*$"),
+    BeforeValidator(clear_default_custnums),
+  ]
   Phone_1: Annotated[Optional[int], BeforeValidator(strip_string_to_digits)]
   AgeVerificationMethod: str
   AgeVerification: str
@@ -62,7 +73,7 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Acct_Promo_Name: Optional[str] = None
   Acct_Discount_Amt: Optional[Decimal] = None
   PID_Coupon: Optional[str] = None
-  PID_Coupon_Discount_Amt: Optional[Decimal] = None
+  PID_Coupon_Discount_Amt: Annotated[Optional[Decimal], AfterValidator(truncate_decimal)] = None
   Manufacturer_Multipack_Quantity: Optional[int] = None
   Manufacturer_Multipack_Discount_Amt: Optional[Decimal] = None
   Manufacturer_Multipack_Desc: Optional[str] = None

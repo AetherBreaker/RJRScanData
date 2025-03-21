@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Any
+from typing import Any, Optional
 
 from types_custom import UnitsOfMeasureEnum
 from utils import upce_to_upca
@@ -38,3 +38,7 @@ def map_to_upca(x):
   itemnum = itemnum.zfill(8)
 
   return upce_to_upca(itemnum) if len(itemnum) == 8 else itemnum
+
+
+def clear_default_custnums(x: str) -> Optional[str]:
+  return None if x in {"101", 101} else x

@@ -20,6 +20,9 @@ from pydantic import (
 logger = getLogger(__name__)
 
 
+VALIDATION_FAILED_CHECK_CONSTANT = "VALIDATION_FAILED"
+
+
 class CustomBaseModel(BaseModel):
   model_config = ConfigDict(
     populate_by_name=True,
@@ -34,7 +37,7 @@ class CustomBaseModel(BaseModel):
   def log_failed_field_validations(
     cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
   ) -> Any:
-    results = None
+    results = VALIDATION_FAILED_CHECK_CONSTANT
     try:
       results = handler(data)
     except Exception as e:
@@ -51,7 +54,7 @@ class CustomBaseModel(BaseModel):
           stack_info=True,
         )
 
-    return results or data
+    return data if results is VALIDATION_FAILED_CHECK_CONSTANT else results
 
   @model_validator(mode="wrap")
   @classmethod
