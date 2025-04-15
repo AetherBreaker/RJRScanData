@@ -131,9 +131,10 @@ class PMUSAScanHeaders(ColNameEnum):
   ReservedField43 = auto()
   ReservedField44 = auto()
   ReservedField45 = auto()
+  DateTime = auto()
 
 
-class ITDScanHeaders(ColNameEnum):
+class ITGScanHeaders(ColNameEnum):
   pass
 
 
@@ -153,6 +154,7 @@ class ItemizedInvoiceCols(ColNameEnum):
     "DiffItemName",
     "Dept_ID",
     "Unit_Type",
+    "Unit_Size",
     "DateTime",
     "Quantity",
     "CostPer",
@@ -182,6 +184,7 @@ class ItemizedInvoiceCols(ColNameEnum):
   DiffItemName = auto()
   Dept_ID = auto()
   Unit_Type = auto()
+  Unit_Size = auto()
   DateTime = auto()
   Quantity = auto()
   CostPer = auto()
@@ -215,6 +218,8 @@ class ItemizedInvoiceCols(ColNameEnum):
   Manufacturer_Multipack_Quantity = auto()
   Manufacturer_Multipack_Discount_Amt = auto()
   Manufacturer_Multipack_Desc = auto()
+  Altria_Manufacturer_Multipack_Quantity = auto()
+  Altria_Manufacturer_Multipack_Discount_Amt = auto()
   Manufacturer_Promo_Desc = auto()
   Manufacturer_Discount_Amt = auto()
   Manufacturer_Buydown_Desc = auto()

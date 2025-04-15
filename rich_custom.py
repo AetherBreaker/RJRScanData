@@ -1,4 +1,3 @@
-from copy import deepcopy
 from itertools import batched
 from typing import Any, Callable, Literal, Optional, Self, TextIO
 
@@ -212,10 +211,18 @@ class ChoicePrompt(PromptBase[int]):
 class RemainingColumn(ProgressColumn):
   last_desc = ""
 
-  def __init__(self, title: str, items: dict[int, str], *args, **kwargs):
+  def __init__(self, title: str, items: dict[int, str] | list[int | str], *args, **kwargs):
     self.title = title
-    self.items = {k: str(v) for k, v in deepcopy(items).items()}
-    self.render_items = {k: str(v) for k, v in deepcopy(items).items()}
+    self.items = (
+      {k: str(v) for k, v in items.items()}
+      if isinstance(items, dict)
+      else {i: str(i) for i in items}
+    )
+    self.render_items = (
+      {k: str(v) for k, v in items.items()}
+      if isinstance(items, dict)
+      else {i: str(i) for i in items}
+    )
     self.num_cols = 6
     self._is_empty = False
 

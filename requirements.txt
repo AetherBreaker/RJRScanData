@@ -2,10 +2,12 @@ gspread
 pandas[performance]
 paramiko
 pydantic
+pydantic-settings
 pyinstaller
 pyodbc
 PyPika
 python-dateutil
+python-dotenv
 pytz
 rich
 SQLAlchemy

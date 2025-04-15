@@ -71,11 +71,20 @@ class RJRValidationModel(CustomBaseModel):
     Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt"), AfterValidator(truncate_decimal)
   ] = None
   manufacturer_multipack_quantity: Annotated[
-    Optional[int], Field(alias="Manufacturer_Multipack_Quantity")
+    Optional[int],
+    Field(
+      alias=AliasChoices(
+        "Manufacturer_Multipack_Quantity", "Altria_Manufacturer_Multipack_Quantity"
+      )
+    ),
   ] = None
   manufacturer_multipack_discount_amt: Annotated[
     Optional[Decimal],
-    Field(alias="Manufacturer_Multipack_Discount_Amt"),
+    Field(
+      alias=AliasChoices(
+        "Manufacturer_Multipack_Discount_Amt", "Altria_Manufacturer_Multipack_Discount_Amt"
+      )
+    ),
     AfterValidator(truncate_decimal),
   ] = None
   manufacturer_promo_desc: Annotated[Optional[str], Field(alias="Manufacturer_Promo_Desc")] = None

@@ -25,11 +25,6 @@ def distribute_discount(prices: Series, quantities: Series, flat_discount: Decim
 
   distributed_discounts = distributed_discounts.map(truncate_decimal)
 
-  # TODO
-  # TODO
-  # TODO
-  # TODO
-
   # fix rounding errors
   if distributed_discounts.sum() != flat_discount:
     difference = flat_discount - distributed_discounts.sum()
@@ -40,6 +35,30 @@ def distribute_discount(prices: Series, quantities: Series, flat_discount: Decim
   distributed_discounts = distributed_discounts.map(truncate_decimal)
 
   return distributed_discounts
+
+
+def distribute_multipack(
+  quantities: Series, per_item_discounnt: Decimal, disc_qty: int
+) -> tuple[Series, Series]:
+  per_item_discounnt = abs(per_item_discounnt / 2)
+  disc_qty *= 2
+
+  applied_count = 0
+
+  # create a new series with the same index to store the distributed discounts
+  distributed_discounts = Series(data=Decimal("0.00"), index=quantities.index, dtype="object")
+
+  distributed_quantities = Series(data=0, index=quantities.index, dtype="int")
+
+  while applied_count < disc_qty:
+    for index, quantity in quantities.items():
+      cur_qty = distributed_quantities[index]
+      if quantity > cur_qty and applied_count < disc_qty:
+        distributed_quantities.loc[index] += 1
+        distributed_discounts.loc[index] += per_item_discounnt
+        applied_count += 1
+
+  return distributed_discounts, distributed_quantities
 
 
 def combine_same_coupons(group: DataFrame, coupon_line_indexes: Index) -> DataFrame:

@@ -3,12 +3,11 @@ if __name__ == "__main__":
 
   configure_logging()
 
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from logging import getLogger
 from pathlib import Path
 
 from pypika.queries import Database, Query, QueryBuilder, Schema, Table
-from utils import get_last_sun
 
 logger = getLogger(__name__)
 
@@ -75,6 +74,7 @@ def build_itemized_invoice_query(
       _table_itemized_invoices.DiffItemName,
       _table_inventory.Dept_ID,
       _table_inventory.Unit_Type,
+      _table_inventory.Unit_Size,
       _table_invoice_totals.DateTime,
       _table_itemized_invoices.Quantity,
       _table_itemized_invoices.CostPer,
@@ -123,13 +123,6 @@ def build_bulk_info_query() -> QueryBuilder:
     # _TABLE_INVENTORY_BULK_INFO.CreateDate,
     # _TABLE_INVENTORY_BULK_INFO.CreateTimestamp,
   )
-
-
-if __name__ == "__main__":
-  last_sun = get_last_sun()
-  start_date = last_sun - timedelta(days=8)
-  with open("test_itemized_invoice_query.sql", "w") as f:
-    f.write(build_itemized_invoice_query(start_date, last_sun).get_sql())
 
 
 def build_custnums_query() -> QueryBuilder:
@@ -208,4 +201,64 @@ def build_custnums_query() -> QueryBuilder:
     # _table_customer.CreateTimestamp,
     # _table_customer.Attn,
     # _table_customer.DueDate,
+  )
+
+
+def build_inventory_data_query() -> QueryBuilder:
+  """Build a query to retrieve all inventory data.
+
+  :return: QueryBuilder to retrieve all inventory data.
+  :rtype: QueryBuilder
+  """
+  return Query.from_(_table_inventory).select(
+    _table_inventory.ItemNum,
+    _table_inventory.ItemName,
+    _table_inventory.Cost,
+    _table_inventory.Price,
+    _table_inventory.Retail_Price,
+    _table_inventory.In_Stock,
+    _table_inventory.Dept_ID,
+    _table_inventory.ItemName_Extra,
+  )
+
+
+def build_volume_report_query(
+  start_date: date | datetime, end_date: date | datetime
+) -> QueryBuilder:
+  """Build a query to retrieve itemized invoices between two dates.
+
+  :param start_date: Start date to filter invoices. Inclusive
+  :type start_date: date | datetime
+  :param end_date: End date to filter invoices. Exclusive
+  :type end_date: date | datetime
+  :return: QueryBuilder to retrieve itemized invoices between two dates.
+  :rtype: QueryBuilder
+  """
+  if isinstance(start_date, datetime):
+    start_date = start_date.date()
+  if isinstance(end_date, datetime):
+    end_date = end_date.date()
+
+  return (
+    (
+      Query.from_(_table_itemized_invoices)
+      .left_join(_table_inventory)
+      .on(_table_itemized_invoices.ItemNum == _table_inventory.ItemNum)
+      .left_join(_table_invoice_totals)
+      .on(_table_itemized_invoices.Invoice_Number == _table_invoice_totals.Invoice_Number)
+      .left_join(_table_customer)
+      .on(_table_invoice_totals.CustNum == _table_customer.CustNum)
+      .left_join(_table_inventory_coupon)
+      .on(_table_itemized_invoices.ItemNum == _table_inventory_coupon.ItemNum)
+    )
+    .select(
+      _table_itemized_invoices.Invoice_Number,
+      _table_itemized_invoices.ItemNum,
+      _table_inventory.ItemName,
+      _table_inventory.Dept_ID,
+      _table_invoice_totals.DateTime,
+      _table_itemized_invoices.Quantity,
+    )
+    .where(_table_invoice_totals.DateTime >= start_date)
+    .where(_table_invoice_totals.DateTime < end_date)
   )

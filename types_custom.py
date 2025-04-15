@@ -4,9 +4,10 @@ if __name__ == "__main__":
   configure_logging()
 
 from collections import UserDict
+from collections.abc import Callable
 from enum import Enum, StrEnum, auto
 from logging import getLogger
-from typing import Any, Callable, Literal, NamedTuple, TypedDict
+from typing import Any, Literal, NamedTuple, TypedDict
 
 from pandas import DataFrame
 from pydantic import BaseModel, ValidationError
@@ -134,6 +135,7 @@ class DeptIDsEnum(ColNameEnum):
     "BDsMisc",
     "BagTob",
     "ChewHelx",
+    "ChewHusk",
     "ChewUSST",
     "Chews",
     "Chews18",
@@ -144,6 +146,7 @@ class DeptIDsEnum(ColNameEnum):
     "Coupon$",
     "Dispos",
     "FGIDisc",
+    "HelxCoup",
     "HookaTob",
     "Hookahs",
     "PMCOUPON",
@@ -157,6 +160,7 @@ class DeptIDsEnum(ColNameEnum):
     "T21JMC",
     "T21LCig",
     "T21Wrap",
+    "USSTCoup",
     "VAPBOGO",
     "VAPBTGO",
     "VAPFlat",
@@ -167,17 +171,20 @@ class DeptIDsEnum(ColNameEnum):
     "BDsLine",
     "BDsMisc",
     "ChewHelx",
+    "ChewHusk",
     "ChewUSST",
     "Cigs",
     "CigsMarl",
     "Coupon$",
     "FGIDisc",
+    "HelxCoup",
     "PMCOUPON",
     "PMPromos",
     "PreNJOY",
     "PromosLT",
     "PromosST",
     "T21JMC",
+    "USSTCoup",
     "VAPBOGO",
     "VAPBTGO",
     "VAPFlat",
@@ -188,6 +195,7 @@ class DeptIDsEnum(ColNameEnum):
   BagTob = auto()
   Battery = auto()
   ChewHelx = auto()
+  ChewHusk = auto()
   ChewUSST = auto()
   Chews = auto()
   Chews18 = auto()
@@ -212,6 +220,7 @@ class DeptIDsEnum(ColNameEnum):
   GrowSup = auto()
   Handpipe = auto()
   Herbal = auto()
+  HelxCoup = auto()
   HookaTob = auto()
   Hookahs = auto()
   Incenses = auto()
@@ -243,6 +252,7 @@ class DeptIDsEnum(ColNameEnum):
   TechSup = auto()
   TobAcc = auto()
   Torches = auto()
+  USSTCoup = auto()
   VAPBOGO = auto()
   VAPBTGO = auto()
   VAPFlat = auto()

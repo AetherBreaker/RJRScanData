@@ -1,15 +1,24 @@
+# sourcery skip: simplify-generator
 if __name__ == "__main__":
   from logging_config import configure_logging
 
   configure_logging()
 
 from decimal import Decimal
+from itertools import chain
 from logging import getLogger
+from math import isnan
 from re import compile
 from string import Template
 from typing import Annotated, Any, Callable, Type
 
-from dataframe_utils import NULL_VALUES, combine_same_coupons, distribute_discount, fix_decimals
+from dataframe_utils import (
+  NULL_VALUES,
+  combine_same_coupons,
+  distribute_discount,
+  distribute_multipack,
+  fix_decimals,
+)
 from pandas import DataFrame, Series, concat, isna
 from reporting_validation_errs import report_errors
 from rich.progress import Progress
@@ -49,12 +58,238 @@ base_context = {
   "skip_fields": {"Dept_ID": None, "Quantity": None},
 }
 
+USSTC_BRAND_GROUPS = {
+  "Copenhagen Premium": {
+    "CAN": [
+      "073100001079",
+      "073100001216",
+      "073100003141",
+      "073100002830",
+      "073100009624",
+    ],
+    "ROLL": [
+      "073100010897",
+      "073100014611",
+      "073100014772",
+      "073100032837",
+      "073100029622",
+    ],
+  },
+  "Copenhagen Popular": {
+    "CAN": [
+      "073100008764",
+      "073100000553",
+      "073100000362",
+      "073100000393",
+      "073100000089",
+      "073100000218",
+      "073100008825",
+      "073100008849",
+    ],
+    "ROLL": [
+      "073100025891",
+      "073100030550",
+      "073100030369",
+      "073100030390",
+      "073100030086",
+      "073100027215",
+      "073100025952",
+      "073100025976",
+    ],
+  },
+  "Copenhagen Spit-Free": {
+    "CAN": ["073100002649", "073100002632"],
+    "ROLL": ["073100012648", "073100012631"],
+  },
+  "Skoal XTRA": {
+    "CAN": [
+      "073100001703",
+      "073100002724",
+      "073100002090",
+      "073100002120",
+      "073100001673",
+      "073100001680",
+      "073100002175",
+      "073100002137",
+    ],
+    "ROLL": [
+      "073100031700",
+      "073100031724",
+      "073100032097",
+      "073100032127",
+      "073100031670",
+      "073100031687",
+      "073100032172",
+      "073100032134",
+    ],
+  },
+  "Skoal Classic": {
+    "CAN": [
+      "073100001376",
+      "073100001482",
+      "073100000881",
+      "073100000607",
+      "073100005412",
+      "073100002885",
+      "073100003196",
+      "073100004575",
+      "073100007699",
+      "073100001901",
+      "073100000904",
+    ],
+    "ROLL": [
+      "073100010934",
+      "073100010958",
+      "073100010972",
+      "073100010996",
+      "073100011016",
+      "073100011054",
+      "073100014789",
+      "073100011856",
+      "073100023620",
+      "073100011948",
+      "073100011955",
+    ],
+  },
+  "Skoal Blends": {
+    "CAN": [
+      "073100002861",
+      "073100003134",
+      "073100005893",
+      "073100004803",
+      "073100004804",
+      "073100004919",
+      "073100005916",
+      "073100003448",
+      "073100005084",
+      "073100009891",
+    ],
+    "ROLL": [
+      "073100011030",
+      "073100014802",
+      "073100019067",
+      "073100012853",
+      "073100022142",
+      "073100022159",
+      "073100019081",
+      "073100016783",
+      "073100035081",
+      "073100090899",
+    ],
+  },
+  "Skoal SNUS": {
+    "CAN": ["073100008900", "073100008924"],
+    "ROLL": ["073100026027", "073100026041"],
+  },
+  "Red Seal": {
+    "CAN": [
+      "073100001857",
+      "073100001734",
+      "073100001741",
+      "073100004551",
+      "073100004568",
+      "073100001970",
+    ],
+    "ROLL": [
+      "073100011887",
+      "073100010651",
+      "073100010668",
+      "073100011818",
+      "073100011849",
+      "073100011283",
+    ],
+  },
+  "Husky": {
+    "CAN": ["073100001154", "073100001130"],
+    "ROLL": ["073100021961", "073100021947", "073100031137"],
+  },
+}
+HELIX_BRAND_GROUPS = [
+  "855022005225",
+  "855022005287",
+  "855022005348",
+  "855022005201",
+  "855022005263",
+  "855022005324",
+  "855022005218",
+  "855022005270",
+  "855022005331",
+  "855022005188",
+  "855022005249",
+  "855022005300",
+  "855022005379",
+  "855022005386",
+  "855022005393",
+  "855022005171",
+  "855022005232",
+  "855022005294",
+]
 
-COUPON_DEPARTMENTS = ["Coupon$", "PMPromos", "PromosLT", "PromosST"]
-PM_LOYALTY_DEPARTMENTS = ["PMCOUPON"]
-PM_LOYALTY_APPLICABLE_DEPARTMENTS = ["CigsMarl"]
 
-NOT_COUPON_DEPARTMENTS = COUPON_DEPARTMENTS + PM_LOYALTY_DEPARTMENTS
+REGULAR_COUPON_DEPARTMENTS = ["Coupon$", "PMPromos", "PromosLT", "PromosST"]
+
+
+LOYALTY_IDENTIFIERS = {
+  "PMUSALoyalty": ["CigsMarl"],
+  "PMUSALoyalty1": ["CigsMarl"],
+  "HelixLoyaltyIA": ["ChewHelx"],
+  "HelixLoyaltyMI": ["ChewHelx"],
+  "HelixLoyaltyOH": ["ChewHelx"],
+  "HelixLoyaltyWI": ["ChewHelx"],
+  "USSTCLoyaltyIA": ["ChewUSST"],
+  "USSTCLoyaltyMI": ["ChewUSST"],
+  "USSTCLoyaltyOH": ["ChewUSST"],
+  "USSTCLoyaltyWI": ["ChewUSST"],
+}
+MULTIPACK_IDENTIFIERS = {
+  "USSTCMultiCanIA": [
+    upc
+    for upc in chain(
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Popular"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Spit-Free"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal XTRA"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal Classic"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal Blends"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal SNUS"].values())),
+    )
+  ],
+  "USSTCMultipackMI": [
+    upc
+    for upc in chain(
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Popular"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Spit-Free"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal Blends"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal SNUS"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Red Seal"].values())),
+    )
+  ],
+  "USSTCMultiCanOH": [
+    upc
+    for upc in chain(
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Popular"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Spit-Free"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal Blends"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Red Seal"].values())),
+    )
+  ],
+  "USSTCMultiCanWI": [
+    upc
+    for upc in chain(
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Popular"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Copenhagen Spit-Free"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Skoal Blends"].values())),
+      chain(*(part for part in USSTC_BRAND_GROUPS["Red Seal"].values())),
+    )
+  ],
+  "HelixMultiCanIA": HELIX_BRAND_GROUPS,
+  "HelixMultiCanMI": HELIX_BRAND_GROUPS,
+  "HelixMultiCanOH": HELIX_BRAND_GROUPS,
+  "HelixMultiCanWI": HELIX_BRAND_GROUPS,
+}
+
+LOYALTY_COUPON_DEPARTMENTS = ["PMCOUPON", "HelxCoup", "USSTCoup"]
+
+ALL_COUPON_DEPARTMENTS = REGULAR_COUPON_DEPARTMENTS + LOYALTY_COUPON_DEPARTMENTS
 
 mixnmatch_rate_pattern = Template(r"(?P<Quantity>\d+) ${uom}/\$$(?P<Price>[\d\.]+)")
 
@@ -69,7 +304,6 @@ def context_setup[**P, R](func: Callable[P, R]) -> Callable[P, R]:
   @wraps(func)
   def wrapper(
     row: Series,
-    errors: dict[int, Any] | None = None,
     *args: P.args,
     **kwargs: P.kwargs,
   ) -> R:
@@ -95,9 +329,6 @@ def context_setup[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     )
 
     if context["row_err"]:
-      if errors is not None:
-        row_errors = errors.get(row.name, [])
-        row_errors.append(context["row_err"])
       # try:
       report_errors(context)
       # except Exception as e:
@@ -249,7 +480,6 @@ def itemized_inv_first_validation_pass(
     )(apply_addrinfo_and_initial_validation)(),
     axis=1,
     model=ItemizedInvoiceModel,
-    errors=errors,
     new_rows=series_to_concat,
     addr_data=addr_info,
   )
@@ -407,9 +637,9 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
   # grab the dept_id of each row
   dept_ids = group[ItemizedInvoiceCols.Dept_ID]
 
-  is_coupon = dept_ids.isin(COUPON_DEPARTMENTS)
+  is_coupon = dept_ids.isin(REGULAR_COUPON_DEPARTMENTS)
 
-  is_coupon_applicable = ~dept_ids.isin(NOT_COUPON_DEPARTMENTS)
+  is_coupon_applicable = ~dept_ids.isin(ALL_COUPON_DEPARTMENTS)
 
   # if the group is nothing by coupon departments, then this invoice only contained items
   # that don't need to be reported
@@ -490,6 +720,12 @@ def identify_bulk_rates(
 
 
 def identify_multipack(group: DataFrame):
+  if group.empty:
+    return group
+
+  group[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = None
+  group[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = None
+
   # sourcery skip: move-assign, remove-redundant-if
   for index, row in group.iterrows():
     if mixnmatchrate := row[ItemizedInvoiceCols.MixNMatchRate]:
@@ -528,6 +764,75 @@ def identify_multipack(group: DataFrame):
         group.loc[index, disc_amt_set_field] = discount_per_item
         group.loc[index, multi_quantity_set_field] = multipack_quantity
 
+  itemnums = group[ItemizedInvoiceCols.ItemNum]
+
+  is_coupon = group[ItemizedInvoiceCols.Dept_ID].isin(ALL_COUPON_DEPARTMENTS)
+
+  is_multiunit_coupon = itemnums.isin(MULTIPACK_IDENTIFIERS.keys())
+
+  # if the group is nothing but coupon departments, then this invoice only contained items
+  # that don't need to be reported
+  if is_coupon.all():
+    group.drop(index=group.index, inplace=True)
+    return group
+
+  # check if any of the dept_ids are in the COUPON_DEPARTMENTS list
+  has_multiunit_coupon = any(is_multiunit_coupon)
+
+  # check if the group has multiple lines in a valid coupon department
+  # has_multiple_coupons = sum(is_coupon) > 1
+
+  if has_multiunit_coupon:
+    multiunit_coupon_line_indexes = group.loc[
+      is_multiunit_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")
+    ].index
+
+    for multiunit_coupon_index in multiunit_coupon_line_indexes:
+      multiunit_coupon_row: Series = group.loc[multiunit_coupon_index]
+
+      multiunit_coupon_value: Decimal = multiunit_coupon_row[ItemizedInvoiceCols.PricePer]
+      multiunit_coupon_itemnum: str = multiunit_coupon_row[ItemizedInvoiceCols.ItemNum]
+      multiunit_coupon_code: str = multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra]
+      multiunit_coupon_quantity: int = multiunit_coupon_row[ItemizedInvoiceCols.Quantity]
+
+      applicable_itemnums = MULTIPACK_IDENTIFIERS.get(multiunit_coupon_itemnum)
+
+      if applicable_itemnums is None:
+        logger.error(
+          f"Unable to find applicable departments for loyalty coupon {multiunit_coupon_itemnum}"
+        )
+        continue
+
+      is_multiunit_applicable = itemnums.isin(applicable_itemnums)
+
+      group.drop(index=multiunit_coupon_index, inplace=True)
+
+      group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
+        multiunit_coupon_code
+      )
+      group.loc[
+        is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt
+      ] = multiunit_coupon_value / 2
+      group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Quantity] = 2
+
+      invoice_applicable_quantities = group.loc[
+        is_multiunit_applicable, ItemizedInvoiceCols.Quantity
+      ]
+
+      distributed_discounts, distributed_quantities = distribute_multipack(
+        invoice_applicable_quantities, multiunit_coupon_value, multiunit_coupon_quantity
+      )
+
+      group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
+        multiunit_coupon_code
+      )
+      group.loc[
+        is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt
+      ] = distributed_discounts
+      group.loc[
+        is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity
+      ] = distributed_quantities
+
   return group
 
 
@@ -540,48 +845,59 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
   # grab the dept_id of each row
   dept_ids = group[ItemizedInvoiceCols.Dept_ID]
 
-  is_coupon = dept_ids.isin(PM_LOYALTY_DEPARTMENTS)
+  itemnums = group[ItemizedInvoiceCols.ItemNum]
 
-  is_coupon_applicable = dept_ids.isin(PM_LOYALTY_APPLICABLE_DEPARTMENTS)
+  is_coupon = dept_ids.isin(ALL_COUPON_DEPARTMENTS)
 
-  # if the group is nothing by coupon departments, then this invoice only contained items
+  is_loyalty_coupon = itemnums.isin(LOYALTY_IDENTIFIERS.keys())
+
+  # if the group is nothing but coupon departments, then this invoice only contained items
   # that don't need to be reported
   if is_coupon.all():
     group.drop(index=group.index, inplace=True)
     return group
 
   # check if any of the dept_ids are in the COUPON_DEPARTMENTS list
-  has_coupon = any(is_coupon)
+  has_loyalty_coupon = any(is_loyalty_coupon)
 
   # check if the group has multiple lines in a valid coupon department
   # has_multiple_coupons = sum(is_coupon) > 1
 
-  if has_coupon:
-    coupon_line_indexes = group.loc[
-      is_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")
+  if has_loyalty_coupon:
+    loyalty_coupon_line_indexes = group.loc[
+      is_loyalty_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")
     ].index
 
-    biggest_coupon_index = group.loc[is_coupon, ItemizedInvoiceCols.Inv_Price].idxmax()
+    for loyalty_coupon_index in loyalty_coupon_line_indexes:
+      loyalty_coupon_row = group.loc[loyalty_coupon_index]
 
-    biggest_coupon_row = group.loc[biggest_coupon_index]
+      loyalty_coupon_value = loyalty_coupon_row[ItemizedInvoiceCols.Inv_Price]
+      loyalty_coupon_itemnum = loyalty_coupon_row[ItemizedInvoiceCols.ItemNum]
+      loyalty_coupon_code = loyalty_coupon_row[ItemizedInvoiceCols.ItemName_Extra]
 
-    biggest_coupon_value = biggest_coupon_row[ItemizedInvoiceCols.Inv_Price]
+      applicable_depts = LOYALTY_IDENTIFIERS.get(loyalty_coupon_itemnum)
 
-    group.drop(index=coupon_line_indexes, inplace=True)
+      if applicable_depts is None:
+        logger.error(
+          f"Unable to find applicable departments for loyalty coupon {loyalty_coupon_itemnum}"
+        )
+        continue
 
-    invoice_prices = group.loc[is_coupon_applicable, ItemizedInvoiceCols.Inv_Price]
-    invoice_quantities = group.loc[is_coupon_applicable, ItemizedInvoiceCols.Quantity]
+      is_loyalty_applicable = dept_ids.isin(applicable_depts)
 
-    distributed_discounts = distribute_discount(
-      invoice_prices, invoice_quantities, biggest_coupon_value
-    )
+      group.drop(index=loyalty_coupon_index, inplace=True)
 
-    group.loc[is_coupon_applicable, ItemizedInvoiceCols.loyalty_disc_desc] = biggest_coupon_row[
-      ItemizedInvoiceCols.ItemName_Extra
-    ]
-    group.loc[is_coupon_applicable, ItemizedInvoiceCols.PID_Coupon_Discount_Amt] = (
-      distributed_discounts
-    )
+      invoice_applicable_prices = group.loc[is_loyalty_applicable, ItemizedInvoiceCols.Inv_Price]
+      invoice_applicable_quantities = group.loc[is_loyalty_applicable, ItemizedInvoiceCols.Quantity]
+
+      distributed_discounts = distribute_discount(
+        invoice_applicable_prices, invoice_applicable_quantities, loyalty_coupon_value
+      )
+
+      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.loyalty_disc_desc] = loyalty_coupon_code
+      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.PID_Coupon_Discount_Amt] = (
+        distributed_discounts
+      )
 
   return group
 

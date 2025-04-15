@@ -12,6 +12,7 @@ from pathlib import Path
 from threading import Lock
 from typing import Literal, cast
 
+from config import SETTINGS
 from logging_config import RICH_CONSOLE
 from pandas import DataFrame
 from pyodbc import Connection, Error, OperationalError, connect
@@ -46,9 +47,7 @@ logger.setLevel(INFO)
 CWD = Path.cwd()
 
 
-WEEK_SHIFT = -3
-
-CUR_WEEK = get_week_of(WEEK_SHIFT)
+CUR_WEEK = get_week_of(SETTINGS.week_shift)
 
 LAST_USED_DB_QUERYFILE = (CWD / __file__).with_name("last used database name.sql")
 PCA_SQL_CREDS_PATH = (CWD / __file__).with_name("store_sql_creds.json")
@@ -320,7 +319,7 @@ def get_store_data(
 
 # TODO: Gather list of stores from google sheets
 DEFAULT_STORES_LIST = [
-  1,
+  # 1,
   2,
   3,
   4,

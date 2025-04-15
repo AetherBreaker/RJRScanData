@@ -42,6 +42,7 @@ class ItemizedInvoiceModel(CustomBaseModel):
   DiffItemName: str
   Dept_ID: DeptIDsEnum
   Unit_Type: Annotated[UnitsOfMeasureEnum, BeforeValidator(validate_unit_type)]
+  Unit_Size: int
   DateTime: datetime
   Quantity: int
   CostPer: Decimal
@@ -77,6 +78,8 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Manufacturer_Multipack_Quantity: Optional[int] = None
   Manufacturer_Multipack_Discount_Amt: Optional[Decimal] = None
   Manufacturer_Multipack_Desc: Optional[str] = None
+  Altria_Manufacturer_Multipack_Quantity: Optional[int] = None
+  Altria_Manufacturer_Multipack_Discount_Amt: Optional[Decimal] = None
   Manufacturer_Promo_Desc: Optional[str] = None
   Manufacturer_Discount_Amt: Optional[Decimal] = None
   Manufacturer_Buydown_Desc: Optional[str] = None

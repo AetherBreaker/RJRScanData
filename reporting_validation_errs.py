@@ -67,50 +67,6 @@ reporting_files: dict[str, tuple[RLock, DataFrame]] = {}
 shared_file_lock = RLock()
 
 
-# @contextmanager
-# def load_reporting_files():
-#   global reporting_files
-#   try:
-#     for report_key, (file_loc, type_key, enum_type) in REPORTING_FILES_SETUP.items():
-#       with shared_file_lock:
-#         if file_loc.exists():
-#           file_loc.unlink()
-#         data = DataFrame(
-#           columns=enum_type.init_columns(),
-#           index=Index([], name=enum_type._index_col, dtype=str),
-#           dtype=str,
-#         )
-#         temp_row = []
-#         for col_name in enum_type.init_columns():
-#           val_type = type_key.get(col_name)
-#           if val_type == datetime:
-#             none_val = datetime.now()
-#           elif val_type is object or not val_type:
-#             none_val = None
-#           else:
-#             none_val = val_type(0)
-#           temp_row.append(none_val)
-#         data.loc["TEMP_ROW"] = temp_row
-
-#         for key, val in type_key.items():
-#           if val == datetime:
-#             data[enum_type(key)] = to_datetime(data[enum_type(key)])
-#           else:
-#             data[enum_type(key)] = data[enum_type(key)].astype(val)
-
-#         reporting_files[report_key] = (RLock(), data)
-
-#     yield
-#   finally:
-#     with shared_file_lock:
-#       for report_key, (lock, df) in reporting_files.items():
-#         file_location = REPORTING_FILES_SETUP[report_key][0]
-
-#         with lock:
-#           df.drop("TEMP_ROW", inplace=True)
-#           df.to_csv(file_location, index=True)
-
-
 class LoadReportingFiles:
   def __enter__(self) -> None:
     for report_key, (file_loc, type_key, enum_type) in REPORTING_FILES_SETUP.items():
@@ -150,25 +106,6 @@ class LoadReportingFiles:
         with lock:
           df.drop("TEMP_ROW", inplace=True)
           df.to_csv(file_location, index=True)
-
-
-# @contextmanager
-# def access_reporting_file(report_key: str) -> Generator[DataFrame, Any, None]:
-#   with shared_file_lock:
-#     result = reporting_files.get(report_key)
-#   if not result:
-#     # files were not loaded during execution. Raise an error
-#     raise ValueError(f"File {report_key} was not loaded during execution")
-#   lock, df = result
-#   with lock:
-#     try:
-#       yield df
-#     finally:
-#       pass
-#       file_location = REPORTING_FILES_SETUP[report_key][0]
-
-#       report_df = df.drop("TEMP_ROW")
-#       report_df.to_csv(file_location, index=True)
 
 
 class AccessReportingFile:
@@ -224,7 +161,7 @@ def report_errors(context: ModelContextType):
 
     if not cond:
       match field_name:
-        case "CustNum" | "account_loyalty_id_number":
+        case "CustNum" | "account_loyalty_id_number" | "LoyaltyIDNumber":
           err_details = err.errors()
 
           handle_type_index = 9999
@@ -255,10 +192,10 @@ def report_errors(context: ModelContextType):
           with reported_invnum_lock:
             reported_invoice_nums.add(invoice_id)
 
-        case "upc_code":
+        case "upc_code" | "SKUCode" | "UPCCode":
           pass
 
-        case "quantity":
+        case "quantity" | "QtySold":
           pass
 
         case _:
