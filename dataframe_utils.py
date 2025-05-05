@@ -94,7 +94,7 @@ def combine_same_coupons(group: DataFrame, coupon_line_indexes: Index) -> DataFr
 NULL_VALUES = ["NULL", "", " ", float("nan"), nan]
 
 
-def fillnas(value: Any):
+def fillnas(value: Any) -> None | Any:
   if value is not None and (isna(value) or value in NULL_VALUES):
     return None
 

@@ -14,9 +14,15 @@ from pydantic import (
   AliasChoices,
   BeforeValidator,
   Field,
+  FieldSerializationInfo,
+  ValidationInfo,
+  ValidatorFunctionWrapHandler,
   computed_field,
+  create_model,
+  field_serializer,
+  field_validator,
 )
-from types_custom import DeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
+from types_custom import DeptIDsEnum, FTXDeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import truncate_decimal
 from validation_config import CustomBaseModel
 from validators_shared import validate_unit_type
@@ -33,6 +39,21 @@ def truncate_phonenum(phonenum: str) -> str:
     return phonenum[-6:] if len(phonenum) > 6 else phonenum
   else:
     return phonenum
+
+
+def default_consumerunits(x: str) -> int:
+  """Default ConsumerUnits to 1 if not provided."""
+  return 1 if x is None or x == 0 else x
+
+
+def fix_date(date: str) -> Optional[date]:
+  """Fix date format."""
+  if date is None or not date:
+    return None
+  try:
+    return datetime.strptime(date, "%Y%m%d").date()
+  except ValueError:
+    return None
 
 
 class PMUSAValidationModel(CustomBaseModel):
@@ -78,7 +99,9 @@ class PMUSAValidationModel(CustomBaseModel):
     UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")
   ]
   QtySold: Annotated[int, Field(alias="Quantity", le=100)]
-  ConsumerUnits: Annotated[int, Field(alias="Unit_Size", gt=0)] = 1
+  ConsumerUnits: Annotated[
+    int, BeforeValidator(default_consumerunits), Field(alias="Unit_Size", gt=0)
+  ] = 1
   TotalMultiUnitDiscountQty: Annotated[
     Optional[int], Field(alias="Altria_Manufacturer_Multipack_Quantity")
   ] = None
@@ -116,18 +139,52 @@ class PMUSAValidationModel(CustomBaseModel):
   ReservedField44: Optional[str] = None
   ReservedField45: Optional[str] = None
 
-  DateTime: Annotated[datetime, Field(alias="DateTime")]
-  Inv_Price: Annotated[Decimal, Field(alias="Inv_Price", exclude=True)]
+  DateTime: Annotated[Optional[datetime], Field(alias="DateTime")]
+  Inv_Price: Annotated[
+    Decimal, Field(alias=AliasChoices("Inv_Price", "FinalSalesPrice"), exclude=True)
+  ]
+  special_TransactionDate: Annotated[
+    Optional[date], BeforeValidator(fix_date), Field(alias="TransactionDate", exclude=True)
+  ] = None
+  special_TransactionTime: Annotated[
+    Optional[time], Field(alias="TransactionTime", exclude=True)
+  ] = None
+
+  # @field_validator("ConsumerUnits", mode="wrap")
+  # @classmethod
+  # def test_consumerunits_validation(
+  #   cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
+  # ):
+  #   results = data
+  #   try:
+  #     results = handler(data)
+  #   except Exception as e:
+  #     exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
+  #     pass
+
+  #   return results
 
   @computed_field
   @property
   def TransactionDate(self) -> date:
-    return self.DateTime.date()
+    if self.DateTime:
+      return self.DateTime.date()
+    elif self.special_TransactionDate:
+      return self.special_TransactionDate
+
+  @field_serializer("TransactionDate")
+  def serialize_transaction_date(
+    self, TransactionDate: date, info: FieldSerializationInfo
+  ) -> Optional[str]:
+    return TransactionDate.strftime("%Y%m%d") if TransactionDate else None
 
   @computed_field
   @property
   def TransactionTime(self) -> time:
-    return self.DateTime.time()
+    if self.DateTime:
+      return self.DateTime.time()
+    elif self.special_TransactionTime:
+      return self.special_TransactionTime
 
   @computed_field
   @property
@@ -145,6 +202,12 @@ class PMUSAValidationModel(CustomBaseModel):
   def WeekEndDate(self) -> date:
     return self.TransactionDate + relativedelta(weekday=SA(1))
 
+  @field_serializer("WeekEndDate")
+  def serialize_week_end_date(
+    self, WeekEndDate: date, info: FieldSerializationInfo
+  ) -> Optional[str]:
+    return WeekEndDate.strftime("%Y%m%d") if WeekEndDate else None
+
   @computed_field
   @property
   def MultiUnitIndicator(self) -> str:
@@ -155,3 +218,10 @@ class PMUSAValidationModel(CustomBaseModel):
       )
       else "N"
     )
+
+
+FTXPMUSAValidationModel = create_model(
+  "FTXPMUSAValidationModel",
+  __base__=PMUSAValidationModel,
+  Category=Annotated[FTXDeptIDsEnum, Field(alias="Dept_ID")],
+)

@@ -294,6 +294,9 @@ def get_store_data(
 
     if not (cols := queries.get(query_name).cols):
       logger.warning(f"SFT {storenum:0>3}: No columns found for {query_name} query")
+
+      # Do not cache if query fails to return a result. This allows for queries failed
+      # due to unstable connections to be retried without needing to requery ALL stores
       if is_caching:
         raise DoNotCacheException(
           f"Failed to connect to store {storenum} SQL server", intended_return=empty_return

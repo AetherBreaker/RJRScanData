@@ -23,6 +23,10 @@ from rich.segment import ControlType, Segment
 from rich.table import Table
 from rich.text import Text, TextType
 
+type RemainingItemsIDType = int
+type RemainingItemsDisplayType = str
+type RemainingTitleType = str
+
 
 class ChoicePrompt(PromptBase[int]):
   tab_length = 2
@@ -211,7 +215,16 @@ class ChoicePrompt(PromptBase[int]):
 class RemainingColumn(ProgressColumn):
   last_desc = ""
 
-  def __init__(self, title: str, items: dict[int, str] | list[int | str], *args, **kwargs):
+  def __init__(
+    self,
+    title: str,
+    items: dict[RemainingItemsIDType, RemainingItemsDisplayType]
+    | list[RemainingItemsIDType | RemainingItemsDisplayType],
+    vertical_padding: int = 0,
+    horizontal_padding: int = 1,
+    *args,
+    **kwargs,
+  ):
     self.title = title
     self.items = (
       {k: str(v) for k, v in items.items()}
@@ -225,12 +238,14 @@ class RemainingColumn(ProgressColumn):
     )
     self.num_cols = 6
     self._is_empty = False
+    self.vertical_padding = vertical_padding
+    self.horizontal_padding = horizontal_padding
 
     self.max_width = max(map(lambda x: len(str(x)), items.values()))
 
     super().__init__(*args, **kwargs)
 
-  def update_items(self, *items_to_remove: tuple[str | int]) -> None:
+  def update_items(self, *items_to_remove: tuple[RemainingItemsIDType]) -> None:
     if items_to_remove != [""]:
       for item in items_to_remove:
         if item in self.items:
@@ -247,10 +262,13 @@ class RemainingColumn(ProgressColumn):
       self.render_items[key] = " " * self.max_width if val is None else val
 
   def render(self, task: "Task") -> RenderableType:
-    vert_pad = 1 if any("\n" in item for item in self.render_items.values()) else 0
+    if self.vertical_padding == 0:
+      vert_pad = 1 if any("\n" in item for item in self.render_items.values()) else 0
+    else:
+      vert_pad = self.vertical_padding
 
     remaining_grid = Table.grid(
-      padding=(vert_pad, 1),
+      padding=(vert_pad, self.horizontal_padding),
       # expand=True,
     )
 
@@ -316,9 +334,9 @@ class LiveCustom(Live):
 
   def init_remaining(
     self,
-    *args: tuple[tuple[dict[int, str], str]],
+    *args: tuple[tuple[dict[RemainingItemsIDType, RemainingItemsDisplayType], RemainingTitleType]],
     performant: bool = True,
-  ) -> tuple[Callable[[int], None]]:  # sourcery skip: class-extract-method
+  ) -> tuple[Callable[[RemainingItemsIDType], None]]:  # sourcery skip: class-extract-method
     self.remaining_pbars: dict[int, Progress] = {}
     self.remaining_cols: dict[int, RemainingColumn] = {}
 

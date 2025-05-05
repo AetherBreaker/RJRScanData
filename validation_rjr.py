@@ -8,7 +8,14 @@ from decimal import Decimal
 from logging import getLogger
 from typing import Optional
 
-from pydantic import AfterValidator, AliasChoices, BeforeValidator, Field, computed_field
+from pydantic import (
+  AfterValidator,
+  AliasChoices,
+  BeforeValidator,
+  Field,
+  computed_field,
+  create_model,
+)
 from types_custom import PromoFlag, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from typing_extensions import Annotated
 from utils import truncate_decimal
@@ -152,3 +159,10 @@ class RJRValidationModel(CustomBaseModel):
       or self.manufacturer_multipack_discount_amt is not None
       else "N"
     )
+
+
+FTXRJRValidationModel = create_model(
+  "FTXRJRValidationModel",
+  __base__=RJRValidationModel,
+  scan_id=Annotated[str, Field(alias="LineNum")],
+)

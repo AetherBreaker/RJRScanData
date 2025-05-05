@@ -351,8 +351,10 @@ def convert_str_to_storenum(storenum: str) -> int:
     raise ValueError(f"Invalid Store Number: {storenum}")
 
 
-def upce_to_upca(upce):
+def upce_to_upca(upce: str):
   """Test value 04182635 -> 041800000265"""
+  if not upce.isdigit():
+    return upce
   if len(upce) == 6:
     middle_digits = upce  # assume we're getting just middle 6 digits
   elif len(upce) == 7:
@@ -364,7 +366,7 @@ def upce_to_upca(upce):
     # last digit is check digit
     middle_digits = upce[1:7]
   else:
-    return False
+    return upce
   d1, d2, d3, d4, d5, d6 = list(middle_digits)
   if d6 in ["0", "1", "2"]:
     mfrnum = d1 + d2 + d6 + "00"

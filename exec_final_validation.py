@@ -1,15 +1,15 @@
 from datetime import datetime, timedelta
-from decimal import Decimal
 from io import StringIO
 
 from config import SETTINGS
 from dataframe_transformations import apply_model_to_df_transforming
+from dataframe_utils import fillnas
 from pandas import DataFrame, concat, read_csv
 from rich.progress import Progress
 from types_column_names import PMUSAScanHeaders, RJRNamesFinal, RJRScanHeaders
 from utils import CWD, pm_start_end_dates, rjr_start_end_dates, taskgen_whencalled, truncate_decimal
-from validation_pmusa import PMUSAValidationModel
-from validation_rjr import RJRValidationModel
+from validation_pmusa import FTXPMUSAValidationModel, PMUSAValidationModel
+from validation_rjr import FTXRJRValidationModel, RJRValidationModel
 
 RJR_SCAN_FILENAME_FORMAT = "B56192_{datetime:%Y%m%d_%H%S}_SWEETFIRETOBACCO.txt"
 
@@ -18,12 +18,26 @@ ALT_SCAN_FILENAME_FORMAT = "SweetFireTobacco{date:%Y%m%d}.txt"
 rjr_scan_start_date, rjr_scan_end_date = rjr_start_end_dates(SETTINGS.week_shift)
 altria_scan_start_date, altria_scan_end_date = pm_start_end_dates(SETTINGS.week_shift)
 
-RJR_OUTPUT_FOLDER = CWD / "RJR Scan Data"
-ALT_OUTPUT_FOLDER = CWD / "Altria Scan Data"
-rjr_sub_folder = RJR_OUTPUT_FOLDER / "submissions" / f"Week Ending {rjr_scan_end_date:%y-%m-%d}"
-alt_sub_folder = ALT_OUTPUT_FOLDER / "submissions" / f"Week Ending {altria_scan_end_date:%y-%m-%d}"
+shifted_rjr_end_date = rjr_scan_end_date - timedelta(days=1)
+shifted_altria_end_date = altria_scan_end_date - timedelta(days=1)
+
+RJR_OUTPUT_FOLDER = CWD / "Output RJR Scan Data"
+ALT_OUTPUT_FOLDER = CWD / "Output Altria Scan Data"
+rjr_sub_folder = RJR_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
+alt_sub_folder = (
+  ALT_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_altria_end_date:%m-%d-%y}"
+)
 rjr_sub_folder.mkdir(exist_ok=True, parents=True)
 alt_sub_folder.mkdir(exist_ok=True, parents=True)
+
+FTX_SCANDATA_INPUT_FOLDER = CWD / "Input FTX Scan Data"
+FTX_SCANDATA_INPUT_FOLDER.mkdir(exist_ok=True)
+
+FTX_RJR_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_rjr_{shifted_rjr_end_date:%Y%m%d}.dat"
+
+FTX_ALT_SCAN_FILE_PATH = (
+  FTX_SCANDATA_INPUT_FOLDER / f"ftx_altria_{shifted_altria_end_date:%Y%m%d}.txt"
+)
 
 
 def apply_rjr_validation(
@@ -54,12 +68,29 @@ def apply_rjr_validation(
   ]
 
   ftx_df = read_csv(
-    CWD / f"ftx_rjr_{rjr_scan_end_date - timedelta(days=1):%Y%m%d}.dat",
+    FTX_RJR_SCAN_FILE_PATH,
     sep="|",
     header=None,
     names=RJRScanHeaders.all_columns(),
     dtype=str,
   )
+
+  ftx_df = ftx_df.map(fillnas)
+
+  ftx_rows = []
+
+  ftx_df.apply(
+    taskgen_whencalled(
+      pbar,
+      "Validating FTX RJR scan data",
+      len(ftx_df),
+    )(apply_model_to_df_transforming)(),
+    axis=1,
+    new_rows=ftx_rows,
+    model=FTXRJRValidationModel,
+  )
+
+  ftx_df = concat(new_rows, axis=1).T
 
   rjr_df = read_csv(
     StringIO(rjr_scan.to_csv(sep="|", index=False)),
@@ -117,43 +148,50 @@ def apply_altria_validation(
 
   week_ending_date = altria_scan_end_date - timedelta(days=1)
 
-  ftx_df = read_csv(
-    CWD / f"ftx_altria_{week_ending_date:%Y%m%d}.txt",
+  ftx_input = read_csv(
+    FTX_ALT_SCAN_FILE_PATH,
     sep="|",
     header=None,
     names=PMUSAScanHeaders.all_columns(),
     dtype=str,
   )
 
-  ftx_summary_line = ftx_df.iloc[0]
-
   # drop summary line from ftx_df
-  ftx_df.drop(index=0, inplace=True)
+  ftx_input.drop(index=0, inplace=True)
 
-  altria_df = read_csv(
-    StringIO(altria_scan.to_csv(sep="|", index=False)),
-    sep="|",
-    header=0,
-    dtype=str,
+  ftx_input = ftx_input.map(fillnas)
+
+  ftx_rows = []
+
+  ftx_input.apply(
+    taskgen_whencalled(
+      pbar,
+      "Validating FTX Altria scan data",
+      len(ftx_input),
+    )(apply_model_to_df_transforming)(),
+    axis=1,
+    new_rows=ftx_rows,
+    model=FTXPMUSAValidationModel,
   )
 
-  altria_scan_new = concat([altria_df, ftx_df], ignore_index=True)
+  ftx_df = concat(new_rows, axis=1).T
+
+  # altria_df = read_csv(
+  #   StringIO(altria_scan.to_csv(sep="|", index=False)),
+  #   sep="|",
+  #   header=0,
+  #   dtype=str,
+  # )
+
+  altria_scan_new = concat([altria_scan, ftx_df], ignore_index=True)
 
   stream = StringIO(newline=None)
 
   summary_line = "|".join(
     [
       str(altria_scan_new.shape[0]),
-      str(
-        altria_scan[PMUSAScanHeaders.QtySold].sum()
-        + int(ftx_summary_line[PMUSAScanHeaders.WeekEndDate])
-      ),
-      str(
-        truncate_decimal(
-          altria_scan[PMUSAScanHeaders.FinalSalesPrice].sum()
-          + Decimal(ftx_summary_line[PMUSAScanHeaders.TransactionDate])
-        )
-      ),
+      str(altria_scan_new[PMUSAScanHeaders.QtySold].sum()),
+      str(truncate_decimal(altria_scan[PMUSAScanHeaders.FinalSalesPrice].sum())),
       "SweetFireTobacco",
     ]
   )

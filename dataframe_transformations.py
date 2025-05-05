@@ -7,10 +7,9 @@ if __name__ == "__main__":
 from decimal import Decimal
 from itertools import chain
 from logging import getLogger
-from math import isnan
 from re import compile
 from string import Template
-from typing import Annotated, Any, Callable, Type
+from typing import Annotated, Callable, Type
 
 from dataframe_utils import (
   NULL_VALUES,
@@ -358,6 +357,14 @@ def apply_model_to_df_transforming(
   :return: The transformed row.
   """
 
+  invoicenum = context["input"].get(ItemizedInvoiceCols.Invoice_Number, None)
+  upc = context["input"].get(ItemizedInvoiceCols.ItemNum, None)
+
+  # if invoicenum in [331178, "331178"]:
+  #   pass
+  # if upc in [819979012675, "819979012675"]:
+  #   pass
+
   context["model"] = model
 
   # create a new instance of the model
@@ -453,7 +460,6 @@ def itemized_inv_first_validation_pass(
   storenum: StoreNum,
   itemized_invoice_data: Annotated[ItemizedInvoiceDataType, "ignore_for_sig"],
   addr_info: Annotated[AddressInfoType, "ignore_for_sig"],
-  errors: Annotated[dict[int, list[Any]], "ignore_for_sig"] = None,
 ) -> ItemizedDataPackage:
   itemized_invoice_data[ItemizedInvoiceCols.Store_Number] = storenum
   itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
@@ -466,6 +472,7 @@ def itemized_inv_first_validation_pass(
   itemized_invoice_data = itemized_invoice_data.map(fix_decimals)
   itemized_invoice_data = itemized_invoice_data.astype(object)
   itemized_invoice_data = itemized_invoice_data.replace(NULL_VALUES, value=None)
+  # itemized_invoice_data = itemized_invoice_data.map(fillnas)
 
   itemized_invoice_data.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
 
