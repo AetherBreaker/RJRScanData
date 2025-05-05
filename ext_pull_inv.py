@@ -2,26 +2,29 @@ from logging import getLogger
 
 from logging_config import configure_logging
 from sql_query_builders import (
-  build_volume_report_query,
+  build_inventory_data_query,
 )
 from sql_querying import query_all_stores_multithreaded
 from types_custom import (
   QueryDict,
   QueryPackage,
 )
-from validators_shared import map_to_upca
+from utils import CWD, upce_to_upca
 
 configure_logging()
 
 logger = getLogger(__name__)
 
 
+storenum = 65
+
+
 queries: QueryDict = {
-  "volume": QueryPackage(
-    query=build_volume_report_query(),
+  "inventory": QueryPackage(
+    query=build_inventory_data_query(),
     cols=[
-      "Invoice_Number",
       "ItemNum",
+      "ItemName",
       "Cost",
       "Price",
       "Retail_Price",
@@ -33,15 +36,12 @@ queries: QueryDict = {
 }
 
 
-queries_result = query_all_stores_multithreaded(queries=queries, storenums=[31])
+queries_result = query_all_stores_multithreaded(queries=queries, storenums=[storenum])
 
 
-df = queries_result["inventory"].get(31)
+df = queries_result["inventory"].get(storenum)
 
 
-df["UPCA"] = df["ItemNum"].map(map_to_upca)
+df["UPCA"] = df["ItemNum"].map(upce_to_upca)
 
-df.to_csv(
-  "SFT031_inventory.csv",
-  index=False,
-)
+df.to_csv(CWD / f"{storenum}_inventory_data.csv", index=False)
