@@ -131,7 +131,6 @@ class PMUSAScanHeaders(ColNameEnum):
   ReservedField43 = auto()
   ReservedField44 = auto()
   ReservedField45 = auto()
-  DateTime = auto()
 
 
 class ITGScanHeaders(ColNameEnum):
@@ -203,6 +202,7 @@ class ItemizedInvoiceCols(ColNameEnum):
   Store_Number = auto()
   Store_Name = auto()
   Store_Address = auto()
+  Store_Address2 = auto()
   Store_City = auto()
   Store_State = auto()
   Store_Zip = auto()

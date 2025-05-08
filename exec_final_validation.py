@@ -6,7 +6,7 @@ from dataframe_transformations import apply_model_to_df_transforming
 from dataframe_utils import fillnas
 from pandas import DataFrame, concat, read_csv
 from rich.progress import Progress
-from types_column_names import PMUSAScanHeaders, RJRNamesFinal, RJRScanHeaders
+from types_column_names import ItemizedInvoiceCols, PMUSAScanHeaders, RJRNamesFinal, RJRScanHeaders
 from utils import CWD, pm_start_end_dates, rjr_start_end_dates, taskgen_whencalled, truncate_decimal
 from validation_pmusa import FTXPMUSAValidationModel, PMUSAValidationModel
 from validation_rjr import FTXRJRValidationModel, RJRValidationModel
@@ -21,13 +21,17 @@ altria_scan_start_date, altria_scan_end_date = pm_start_end_dates(SETTINGS.week_
 shifted_rjr_end_date = rjr_scan_end_date - timedelta(days=1)
 shifted_altria_end_date = altria_scan_end_date - timedelta(days=1)
 
+
 RJR_OUTPUT_FOLDER = CWD / "Output RJR Scan Data"
-ALT_OUTPUT_FOLDER = CWD / "Output Altria Scan Data"
+rjr_result_folder = RJR_OUTPUT_FOLDER / "New" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
 rjr_sub_folder = RJR_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
+rjr_result_folder.mkdir(exist_ok=True, parents=True)
+rjr_sub_folder.mkdir(exist_ok=True, parents=True)
+
+ALT_OUTPUT_FOLDER = CWD / "Output Altria Scan Data"
 alt_sub_folder = (
   ALT_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_altria_end_date:%m-%d-%y}"
 )
-rjr_sub_folder.mkdir(exist_ok=True, parents=True)
 alt_sub_folder.mkdir(exist_ok=True, parents=True)
 
 FTX_SCANDATA_INPUT_FOLDER = CWD / "Input FTX Scan Data"
@@ -44,6 +48,13 @@ def apply_rjr_validation(
   pbar: Progress,
   input_data: DataFrame,
 ):
+  input_data = input_data.copy(deep=True)
+
+  input_data = input_data[
+    (input_data[ItemizedInvoiceCols.DateTime] >= rjr_scan_start_date)
+    & (input_data[ItemizedInvoiceCols.DateTime] < rjr_scan_end_date)
+  ]
+
   new_rows = []
 
   input_data.apply(
@@ -60,12 +71,6 @@ def apply_rjr_validation(
   rjr_scan = concat(new_rows, axis=1).T
 
   rjr_scan = rjr_scan[RJRScanHeaders.all_columns()]
-
-  # filter by date range
-  rjr_scan = rjr_scan[
-    (rjr_scan[RJRScanHeaders.transaction_date] >= rjr_scan_start_date)
-    & (rjr_scan[RJRScanHeaders.transaction_date] < rjr_scan_end_date)
-  ]
 
   ftx_df = read_csv(
     FTX_RJR_SCAN_FILE_PATH,
@@ -111,7 +116,7 @@ def apply_rjr_validation(
 
   now = datetime.now()
   rjr_scan.to_csv(
-    (RJR_OUTPUT_FOLDER / RJR_SCAN_FILENAME_FORMAT.format(datetime=now)),
+    (rjr_result_folder / RJR_SCAN_FILENAME_FORMAT.format(datetime=now)),
     sep="|",
     index=False,
   )
@@ -121,6 +126,13 @@ def apply_altria_validation(
   pbar: Progress,
   input_data: DataFrame,
 ):
+  input_data = input_data.copy(deep=True)
+
+  input_data = input_data[
+    (input_data[ItemizedInvoiceCols.DateTime] >= altria_scan_start_date)
+    & (input_data[ItemizedInvoiceCols.DateTime] < altria_scan_end_date)
+  ]
+
   new_rows = []
 
   input_data.apply(
@@ -137,16 +149,6 @@ def apply_altria_validation(
   altria_scan = concat(new_rows, axis=1).T
 
   altria_scan = altria_scan[PMUSAScanHeaders.all_columns()]
-
-  # filter by date range
-  altria_scan = altria_scan[
-    (altria_scan[PMUSAScanHeaders.DateTime] >= altria_scan_start_date)
-    & (altria_scan[PMUSAScanHeaders.DateTime] < altria_scan_end_date)
-  ]
-
-  altria_scan.drop(columns=PMUSAScanHeaders.DateTime, inplace=True)
-
-  week_ending_date = altria_scan_end_date - timedelta(days=1)
 
   ftx_input = read_csv(
     FTX_ALT_SCAN_FILE_PATH,
@@ -176,13 +178,6 @@ def apply_altria_validation(
 
   ftx_df = concat(new_rows, axis=1).T
 
-  # altria_df = read_csv(
-  #   StringIO(altria_scan.to_csv(sep="|", index=False)),
-  #   sep="|",
-  #   header=0,
-  #   dtype=str,
-  # )
-
   altria_scan_new = concat([altria_scan, ftx_df], ignore_index=True)
 
   stream = StringIO(newline=None)
@@ -191,7 +186,7 @@ def apply_altria_validation(
     [
       str(altria_scan_new.shape[0]),
       str(altria_scan_new[PMUSAScanHeaders.QtySold].sum()),
-      str(truncate_decimal(altria_scan[PMUSAScanHeaders.FinalSalesPrice].sum())),
+      str(truncate_decimal(altria_scan_new[PMUSAScanHeaders.FinalSalesPrice].sum())),
       "SweetFireTobacco",
     ]
   )
@@ -200,5 +195,7 @@ def apply_altria_validation(
 
   altria_scan_new.to_csv(stream, sep="|", index=False, header=False)
 
-  with (ALT_OUTPUT_FOLDER / ALT_SCAN_FILENAME_FORMAT.format(date=week_ending_date)).open("w") as f:
+  with (ALT_OUTPUT_FOLDER / ALT_SCAN_FILENAME_FORMAT.format(date=shifted_altria_end_date)).open(
+    "w"
+  ) as f:
     f.write(stream.getvalue())

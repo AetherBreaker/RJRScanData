@@ -389,6 +389,9 @@ DEFAULT_STORES_LIST = [
   88,
 ]
 
+if SETTINGS.testing_stores:
+  DEFAULT_STORES_LIST = SETTINGS.testing_stores
+
 # DEFAULT_STORES_LIST = [62]
 
 

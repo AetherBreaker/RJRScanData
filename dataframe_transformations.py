@@ -357,12 +357,9 @@ def apply_model_to_df_transforming(
   :return: The transformed row.
   """
 
-  invoicenum = context["input"].get(ItemizedInvoiceCols.Invoice_Number, None)
-  upc = context["input"].get(ItemizedInvoiceCols.ItemNum, None)
+  # invoicenum = context["input"].get(ItemizedInvoiceCols.Invoice_Number, None)
 
-  # if invoicenum in [331178, "331178"]:
-  #   pass
-  # if upc in [819979012675, "819979012675"]:
+  # if invoicenum in ["36129", 36129]:
   #   pass
 
   context["model"] = model
@@ -370,10 +367,10 @@ def apply_model_to_df_transforming(
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
-  if context["row_err"].get("account_loyalty_id_number", None):
+  if context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.CustNum)):
     return row
 
-  if context["row_err"].get("upc_code", None):
+  if context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.ItemNum)):
     return row
 
   # serialize the model to a dict
@@ -541,11 +538,11 @@ def apply_addrinfo_and_initial_validation(
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
-  if quantity_err := context["row_err"].get("Quantity", None):
+  if quantity_err := context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.Quantity)):
     if isinstance(quantity_err[0], Decimal):
       return row
 
-  if context["row_err"].get("CustNum", None):
+  if context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.CustNum)):
     return row
 
   if row[ItemizedInvoiceCols.ItemName] == "Cigar Promo 100% Discount":
@@ -730,6 +727,11 @@ def identify_multipack(group: DataFrame):
   if group.empty:
     return group
 
+  # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
+
+  # if invoicenum in [129451, "129451"]:
+  #   pass
+
   group[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = None
   group[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = None
 
@@ -790,17 +792,33 @@ def identify_multipack(group: DataFrame):
   # has_multiple_coupons = sum(is_coupon) > 1
 
   if has_multiunit_coupon:
-    multiunit_coupon_line_indexes = group.loc[
-      is_multiunit_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")
-    ].index
+    multiunit_coupon_line_indexes = group.loc[is_multiunit_coupon].index
+
+    multiunit_coupon_data = {}
 
     for multiunit_coupon_index in multiunit_coupon_line_indexes:
       multiunit_coupon_row: Series = group.loc[multiunit_coupon_index]
-
-      multiunit_coupon_value: Decimal = multiunit_coupon_row[ItemizedInvoiceCols.PricePer]
       multiunit_coupon_itemnum: str = multiunit_coupon_row[ItemizedInvoiceCols.ItemNum]
-      multiunit_coupon_code: str = multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra]
-      multiunit_coupon_quantity: int = multiunit_coupon_row[ItemizedInvoiceCols.Quantity]
+
+      coupon_data = multiunit_coupon_data.get(multiunit_coupon_itemnum, {"quantity": 0})
+
+      coupon_data.update(
+        {
+          "price_per": multiunit_coupon_row[ItemizedInvoiceCols.PricePer],
+          "code": multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
+        }
+      )
+
+      coupon_data["quantity"] += multiunit_coupon_row[ItemizedInvoiceCols.Quantity]
+
+      multiunit_coupon_data[multiunit_coupon_itemnum] = coupon_data
+
+      group.drop(index=multiunit_coupon_index, inplace=True)
+
+    for multiunit_coupon_itemnum, coupon_data in multiunit_coupon_data.items():
+      multiunit_coupon_code = coupon_data["code"]
+      multiunit_coupon_value = coupon_data["price_per"]
+      multiunit_coupon_quantity = coupon_data["quantity"]
 
       applicable_itemnums = MULTIPACK_IDENTIFIERS.get(multiunit_coupon_itemnum)
 
@@ -811,8 +829,6 @@ def identify_multipack(group: DataFrame):
         continue
 
       is_multiunit_applicable = itemnums.isin(applicable_itemnums)
-
-      group.drop(index=multiunit_coupon_index, inplace=True)
 
       group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
         multiunit_coupon_code
@@ -830,9 +846,6 @@ def identify_multipack(group: DataFrame):
         invoice_applicable_quantities, multiunit_coupon_value, multiunit_coupon_quantity
       )
 
-      group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
-        multiunit_coupon_code
-      )
       group.loc[
         is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt
       ] = distributed_discounts
@@ -845,8 +858,12 @@ def identify_multipack(group: DataFrame):
 
 def identify_loyalty(group: DataFrame) -> DataFrame:
   # sourcery skip: extract-method
+  if group.empty:
+    return group
 
-  # if not group.empty and group[ItemizedInvoiceCols.Invoice_Number].iloc[0] in [331473]:
+  # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
+
+  # if invoicenum in [208282, "208282"]:
   #   pass
 
   # grab the dept_id of each row
@@ -871,16 +888,32 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
   # has_multiple_coupons = sum(is_coupon) > 1
 
   if has_loyalty_coupon:
-    loyalty_coupon_line_indexes = group.loc[
-      is_loyalty_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")
-    ].index
+    loyalty_coupon_line_indexes = group.loc[is_loyalty_coupon].index
+
+    loyalty_coupon_data = {}
 
     for loyalty_coupon_index in loyalty_coupon_line_indexes:
-      loyalty_coupon_row = group.loc[loyalty_coupon_index]
+      loyalty_coupon_row: Series = group.loc[loyalty_coupon_index]
+      loyalty_coupon_itemnum: str = loyalty_coupon_row[ItemizedInvoiceCols.ItemNum]
 
-      loyalty_coupon_value = loyalty_coupon_row[ItemizedInvoiceCols.Inv_Price]
-      loyalty_coupon_itemnum = loyalty_coupon_row[ItemizedInvoiceCols.ItemNum]
-      loyalty_coupon_code = loyalty_coupon_row[ItemizedInvoiceCols.ItemName_Extra]
+      coupon_data = loyalty_coupon_data.get(loyalty_coupon_itemnum, {"quantity": 0})
+
+      coupon_data.update(
+        {
+          "price_per": loyalty_coupon_row[ItemizedInvoiceCols.PricePer],
+          "code": loyalty_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
+        }
+      )
+
+      coupon_data["quantity"] += loyalty_coupon_row[ItemizedInvoiceCols.Quantity]
+
+      loyalty_coupon_data[loyalty_coupon_itemnum] = coupon_data
+
+      group.drop(index=loyalty_coupon_index, inplace=True)
+
+    for loyalty_coupon_itemnum, coupon_data in loyalty_coupon_data.items():
+      loyalty_coupon_code = coupon_data["code"]
+      loyalty_coupon_value = abs(coupon_data["price_per"] * coupon_data["quantity"])
 
       applicable_depts = LOYALTY_IDENTIFIERS.get(loyalty_coupon_itemnum)
 
@@ -891,8 +924,6 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
         continue
 
       is_loyalty_applicable = dept_ids.isin(applicable_depts)
-
-      group.drop(index=loyalty_coupon_index, inplace=True)
 
       invoice_applicable_prices = group.loc[is_loyalty_applicable, ItemizedInvoiceCols.Inv_Price]
       invoice_applicable_quantities = group.loc[is_loyalty_applicable, ItemizedInvoiceCols.Quantity]

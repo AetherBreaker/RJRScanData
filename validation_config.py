@@ -4,7 +4,7 @@ if __name__ == "__main__":
   configure_logging()
 
 from logging import getLogger
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
 
 from pydantic import (
   BaseModel,
@@ -17,6 +17,9 @@ from pydantic import (
   model_validator,
 )
 
+if TYPE_CHECKING:
+  from types_column_names import ColNameEnum
+
 logger = getLogger(__name__)
 
 
@@ -24,6 +27,7 @@ VALIDATION_FAILED_CHECK_CONSTANT = "VALIDATION_FAILED"
 
 
 class CustomBaseModel(BaseModel):
+  _field_name_lookup: dict[str, str] = {}
   model_config = ConfigDict(
     populate_by_name=True,
     use_enum_values=True,
@@ -31,6 +35,10 @@ class CustomBaseModel(BaseModel):
     validate_assignment=True,
     coerce_numbers_to_str=True,
   )
+
+  def lookup_field(self, field_name: "ColNameEnum") -> str:
+    """Lookup the field name in the _field_name_lookup dictionary."""
+    return self._field_name_lookup.get(field_name, field_name)
 
   @field_validator("*", mode="wrap", check_fields=False)
   @classmethod

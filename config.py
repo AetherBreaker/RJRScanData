@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     env_ignore_empty=True,
   )
   week_shift: Annotated[int, Field(alias="WEEK_SHIFT")] = 0
+  testing_stores: Annotated[list[int], Field(alias="TESTING_STORES")] = []
 
 
 SETTINGS = Settings()

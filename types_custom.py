@@ -10,9 +10,10 @@ from logging import getLogger
 from typing import Any, Literal, NamedTuple, TypedDict
 
 from pandas import DataFrame
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 from pyodbc import Row
 from pypika.queries import QueryBuilder
+from validation_config import CustomBaseModel
 
 logger = getLogger(__name__)
 
@@ -361,7 +362,7 @@ class ModelContextType(TypedDict):
   store_num: StoreNum
   input: dict[str, Any]
   row_id: int
-  model: BaseModel
+  model: CustomBaseModel
 
 
 class ValidationErrPackage(NamedTuple):

@@ -15,13 +15,11 @@ from pydantic import (
   BeforeValidator,
   Field,
   FieldSerializationInfo,
-  ValidationInfo,
-  ValidatorFunctionWrapHandler,
   computed_field,
   create_model,
   field_serializer,
-  field_validator,
 )
+from types_column_names import ItemizedInvoiceCols, PMUSAScanHeaders
 from types_custom import DeptIDsEnum, FTXDeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import truncate_decimal
 from validation_config import CustomBaseModel
@@ -35,10 +33,14 @@ ALTRIA_ACCOUNT_NUMBER = "77412"
 
 def truncate_phonenum(phonenum: str) -> str:
   """Truncate phone number to last 6 digits."""
-  if phonenum is not None:
-    return phonenum[-6:] if len(phonenum) > 6 else phonenum
-  else:
+  if phonenum is None or not isinstance(phonenum, str):
+    return None
+  if len(phonenum) > 6 and phonenum.isdigit():
+    return phonenum[-6:]
+  elif len(phonenum) == 6 and phonenum.isdigit():
     return phonenum
+  else:
+    return None
 
 
 def default_consumerunits(x: str) -> int:
@@ -56,17 +58,14 @@ def fix_date(date: str) -> Optional[date]:
     return None
 
 
+def map_age_validation_method(method: str) -> Optional[str]:
+  """Map age validation method to a standard format."""
+  return "Scanned ID" if method in {"1", 1} else None
+
+
 class PMUSAValidationModel(CustomBaseModel):
   TransactionID: Annotated[int, Field(alias="Invoice_Number")]
-  StoreNumber: Annotated[
-    StoreNum,
-    Field(
-      alias=AliasChoices(
-        "Store_ID",
-        "Store_Number",
-      )
-    ),
-  ]
+  StoreNumber: Annotated[StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"))]
   StoreName: Annotated[str, Field(alias="Store_Name")]
   StoreAddress: Annotated[Optional[str], Field(alias="Store_Address")]
   StoreCity: Annotated[Optional[str], Field(alias="Store_City")]
@@ -75,24 +74,10 @@ class PMUSAValidationModel(CustomBaseModel):
   Category: Annotated[DeptIDsEnum, Field(alias="Dept_ID")]
   ManufacturerName: Annotated[Optional[str], Field(alias="ItemName_Extra")] = None
   SKUCode: Annotated[
-    str,
-    Field(
-      alias="ItemNum",
-      min_length=6,
-      max_length=14,
-      # UPC codes must be numeric only
-      pattern=r"^[0-9]{6,14}$",
-    ),
+    str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]{6,14}$")
   ]
   UPCCode: Annotated[
-    str,
-    Field(
-      alias="ItemNum",
-      min_length=6,
-      max_length=14,
-      # UPC codes must be numeric only
-      pattern=r"^[0-9]{6,14}$",
-    ),
+    str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]{6,14}$")
   ]
   ItemDescription: Annotated[str, Field(alias="ItemName")]
   UnitMeasure: Annotated[
@@ -118,20 +103,18 @@ class PMUSAValidationModel(CustomBaseModel):
   OtherManufacturerDiscountAmt: Optional[Decimal] = None
   LoyaltyDiscountName: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
   LoyaltyDiscountAmt: Annotated[Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt")] = None
-  FinalSalesPrice: Annotated[Decimal, Field(alias="Inv_Price")]
   StoreTelephone: Annotated[Optional[int], Field(alias="Store_Telephone")]
   StoreContactName: Optional[str] = None
   StoreContactEmail: Annotated[Optional[str], Field(alias="Store_ContactEmail")]
   ProductGroupingCode: Optional[str] = None
   ProductGroupingName: Optional[str] = None
-  LoyaltyIDNumber: Annotated[
-    Optional[str],
-    Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum"),
-  ]
+  LoyaltyIDNumber: Annotated[Optional[str], Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum")]
   AdultTobConsumerPhoneNum: Annotated[
-    Optional[str], AfterValidator(truncate_phonenum), Field(alias="Phone_1")
+    Optional[str], BeforeValidator(truncate_phonenum), Field(alias="Phone_1")
+  ] = None
+  AgeValidationMethod: Annotated[
+    Optional[str], AfterValidator(map_age_validation_method), Field(alias="AgeVerificationMethod")
   ]
-  AgeValidationMethod: Annotated[Optional[str], Field(alias="AgeVerificationMethod")]
   ManufacturerOfferName: Optional[str] = None
   ManufacturerOfferAmt: Optional[str] = None
   PurchaseType: Optional[str] = None
@@ -139,9 +122,11 @@ class PMUSAValidationModel(CustomBaseModel):
   ReservedField44: Optional[str] = None
   ReservedField45: Optional[str] = None
 
-  DateTime: Annotated[Optional[datetime], Field(alias="DateTime")]
-  Inv_Price: Annotated[
-    Decimal, Field(alias=AliasChoices("Inv_Price", "FinalSalesPrice"), exclude=True)
+  DateTime: Annotated[Optional[datetime], Field(alias="DateTime", exclude=True)]
+  Price_at_sale: Annotated[
+    Decimal,
+    AfterValidator(abs),
+    Field(alias=AliasChoices("PricePer", "FinalSalesPrice"), exclude=True),
   ]
   special_TransactionDate: Annotated[
     Optional[date], BeforeValidator(fix_date), Field(alias="TransactionDate", exclude=True)
@@ -149,6 +134,34 @@ class PMUSAValidationModel(CustomBaseModel):
   special_TransactionTime: Annotated[
     Optional[time], Field(alias="TransactionTime", exclude=True)
   ] = None
+
+  _field_name_lookup = {
+    ItemizedInvoiceCols.Invoice_Number: PMUSAScanHeaders.TransactionID,
+    ItemizedInvoiceCols.Store_Number: PMUSAScanHeaders.StoreNumber,
+    ItemizedInvoiceCols.Store_Name: PMUSAScanHeaders.StoreName,
+    ItemizedInvoiceCols.Store_Address: PMUSAScanHeaders.StoreAddress,
+    ItemizedInvoiceCols.Store_City: PMUSAScanHeaders.StoreCity,
+    ItemizedInvoiceCols.Store_State: PMUSAScanHeaders.StoreState,
+    ItemizedInvoiceCols.Store_Zip: PMUSAScanHeaders.StoreZip,
+    ItemizedInvoiceCols.Dept_ID: PMUSAScanHeaders.Category,
+    ItemizedInvoiceCols.ItemName_Extra: PMUSAScanHeaders.ManufacturerName,
+    ItemizedInvoiceCols.ItemNum: PMUSAScanHeaders.UPCCode,
+    ItemizedInvoiceCols.ItemName: PMUSAScanHeaders.ItemDescription,
+    ItemizedInvoiceCols.Unit_Type: PMUSAScanHeaders.UnitMeasure,
+    ItemizedInvoiceCols.Quantity: PMUSAScanHeaders.QtySold,
+    ItemizedInvoiceCols.Unit_Size: PMUSAScanHeaders.ConsumerUnits,
+    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity: PMUSAScanHeaders.TotalMultiUnitDiscountQty,
+    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt: PMUSAScanHeaders.TotalMultiUnitDiscountAmt,
+    ItemizedInvoiceCols.Acct_Promo_Name: PMUSAScanHeaders.RetailerFundedDiscountName,
+    ItemizedInvoiceCols.Acct_Discount_Amt: PMUSAScanHeaders.RetailerFundedDiscountAmt,
+    ItemizedInvoiceCols.loyalty_disc_desc: PMUSAScanHeaders.LoyaltyDiscountName,
+    ItemizedInvoiceCols.PID_Coupon_Discount_Amt: PMUSAScanHeaders.LoyaltyDiscountAmt,
+    ItemizedInvoiceCols.Store_Telephone: PMUSAScanHeaders.StoreTelephone,
+    ItemizedInvoiceCols.Store_ContactEmail: PMUSAScanHeaders.StoreContactEmail,
+    ItemizedInvoiceCols.CustNum: PMUSAScanHeaders.LoyaltyIDNumber,
+    ItemizedInvoiceCols.Phone_1: PMUSAScanHeaders.AdultTobConsumerPhoneNum,
+    ItemizedInvoiceCols.AgeVerificationMethod: PMUSAScanHeaders.AgeValidationMethod,
+  }
 
   # @field_validator("ConsumerUnits", mode="wrap")
   # @classmethod
@@ -188,9 +201,9 @@ class PMUSAValidationModel(CustomBaseModel):
 
   @computed_field
   @property
-  def calc_final_price(self) -> Decimal:
+  def FinalSalesPrice(self) -> Decimal:
     """Calculate the final price."""
-    return truncate_decimal(self.QtySold * self.Inv_Price)
+    return truncate_decimal(self.QtySold * self.Price_at_sale)
 
   @computed_field
   @property
@@ -224,4 +237,8 @@ FTXPMUSAValidationModel = create_model(
   "FTXPMUSAValidationModel",
   __base__=PMUSAValidationModel,
   Category=Annotated[FTXDeptIDsEnum, Field(alias="Dept_ID")],
+  DateTime=Annotated[
+    Optional[datetime],
+    Field(default=None, alias="DateTime", exclude=True),
+  ],
 )

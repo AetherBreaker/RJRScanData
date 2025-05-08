@@ -1,10 +1,11 @@
 from logging import getLogger
 
 from logging_config import configure_logging
+from pandas import concat
 from sql_query_builders import (
   build_inventory_data_query,
 )
-from sql_querying import query_all_stores_multithreaded
+from sql_querying import DEFAULT_STORES_LIST, query_all_stores_multithreaded
 from types_custom import (
   QueryDict,
   QueryPackage,
@@ -16,7 +17,7 @@ configure_logging()
 logger = getLogger(__name__)
 
 
-storenum = 65
+storenum = 59
 
 
 queries: QueryDict = {
@@ -36,12 +37,21 @@ queries: QueryDict = {
 }
 
 
-queries_result = query_all_stores_multithreaded(queries=queries, storenums=[storenum])
+# queries_result = query_all_stores_multithreaded(queries=queries, storenums=[storenum])
+queries_result = query_all_stores_multithreaded(queries=queries, storenums=DEFAULT_STORES_LIST)
+
+store_data = []
 
 
-df = queries_result["inventory"].get(storenum)
+for storenum, data in queries_result["inventory"].items():
+  df = queries_result["inventory"].get(storenum)
+
+  df["UPCA"] = df["ItemNum"].map(upce_to_upca)
+
+  store_data.append(df)
 
 
-df["UPCA"] = df["ItemNum"].map(upce_to_upca)
+final = concat(store_data, ignore_index=True)
+final = final.drop_duplicates(subset=["ItemNum"], keep="first")
 
-df.to_csv(CWD / f"{storenum}_inventory_data.csv", index=False)
+final.to_csv(CWD / "all_inventory_data.csv", index=False)

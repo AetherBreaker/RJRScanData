@@ -16,6 +16,7 @@ from pydantic import (
   computed_field,
   create_model,
 )
+from types_column_names import ItemizedInvoiceCols, RJRScanHeaders
 from types_custom import PromoFlag, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from typing_extensions import Annotated
 from utils import truncate_decimal
@@ -27,13 +28,7 @@ logger = getLogger(__name__)
 
 class RJRValidationModel(CustomBaseModel):
   outlet_number: Annotated[
-    Optional[StoreNum],
-    Field(
-      alias=AliasChoices(
-        "Store_ID",
-        "Store_Number",
-      ),
-    ),
+    Optional[StoreNum], Field(alias=AliasChoices("Store_ID", "Store_Number"))
   ]
   address_1: Annotated[Optional[str], Field(alias="Store_Address")]
   address_2: Annotated[Optional[str], Field(alias="Store_Address2")]
@@ -47,14 +42,7 @@ class RJRValidationModel(CustomBaseModel):
   quantity: Annotated[int, Field(alias="Quantity", le=100)]
   price: Annotated[Decimal, Field(alias="Inv_Price"), AfterValidator(truncate_decimal)]
   upc_code: Annotated[
-    str,
-    Field(
-      alias="ItemNum",
-      min_length=6,
-      max_length=14,
-      # UPC codes must be numeric only
-      pattern=r"^[0-9]{6,14}$",
-    ),
+    str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]{6,14}$")
   ]
   upc_description: Annotated[str, Field(alias="ItemName")]
   unit_of_measure: Annotated[
@@ -105,10 +93,44 @@ class RJRValidationModel(CustomBaseModel):
     Optional[str], Field(alias="Manufacturer_Multipack_Desc")
   ] = None
   account_loyalty_id_number: Annotated[
-    Optional[str],
-    Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum"),
+    Optional[str], Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum")
   ]
   coupon_desc: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
+
+  _field_name_lookup = {
+    ItemizedInvoiceCols.Store_Number: RJRScanHeaders.outlet_number,
+    ItemizedInvoiceCols.Store_Address: RJRScanHeaders.address_1,
+    ItemizedInvoiceCols.Store_Address2: RJRScanHeaders.address_2,
+    ItemizedInvoiceCols.Store_City: RJRScanHeaders.city,
+    ItemizedInvoiceCols.Store_State: RJRScanHeaders.state,
+    ItemizedInvoiceCols.Store_Zip: RJRScanHeaders.zip,
+    ItemizedInvoiceCols.DateTime: RJRScanHeaders.transaction_date,
+    ItemizedInvoiceCols.Invoice_Number: RJRScanHeaders.market_basket_id,
+    ItemizedInvoiceCols.LineNum: RJRScanHeaders.scan_id,
+    ItemizedInvoiceCols.Station_ID: RJRScanHeaders.register_id,
+    ItemizedInvoiceCols.Quantity: RJRScanHeaders.quantity,
+    ItemizedInvoiceCols.Inv_Price: RJRScanHeaders.price,
+    ItemizedInvoiceCols.ItemNum: RJRScanHeaders.upc_code,
+    ItemizedInvoiceCols.ItemName: RJRScanHeaders.upc_description,
+    ItemizedInvoiceCols.Unit_Type: RJRScanHeaders.unit_of_measure,
+    ItemizedInvoiceCols.Retail_Multipack_Quantity: RJRScanHeaders.outlet_multipack_quantity,
+    ItemizedInvoiceCols.Retail_Multipack_Disc_Amt: RJRScanHeaders.outlet_multipack_discount_amt,
+    ItemizedInvoiceCols.Acct_Promo_Name: RJRScanHeaders.acct_promo_name,
+    ItemizedInvoiceCols.Acct_Discount_Amt: RJRScanHeaders.acct_discount_amt,
+    ItemizedInvoiceCols.Manufacturer_Discount_Amt: RJRScanHeaders.manufacturer_discount_amt,
+    ItemizedInvoiceCols.PID_Coupon: RJRScanHeaders.pid_coupon,
+    ItemizedInvoiceCols.PID_Coupon_Discount_Amt: RJRScanHeaders.pid_coupon_discount_amt,
+    ItemizedInvoiceCols.Manufacturer_Multipack_Quantity: RJRScanHeaders.manufacturer_multipack_quantity,
+    ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt: RJRScanHeaders.manufacturer_multipack_discount_amt,
+    ItemizedInvoiceCols.Manufacturer_Promo_Desc: RJRScanHeaders.manufacturer_promo_desc,
+    ItemizedInvoiceCols.Manufacturer_Buydown_Desc: RJRScanHeaders.manufacturer_buydown_desc,
+    ItemizedInvoiceCols.Manufacturer_Buydown_Amt: RJRScanHeaders.manufacturer_buydown_amt,
+    ItemizedInvoiceCols.Manufacturer_Multipack_Desc: RJRScanHeaders.manufacturer_multipack_desc,
+    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity: RJRScanHeaders.manufacturer_multipack_quantity,
+    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt: RJRScanHeaders.manufacturer_multipack_discount_amt,
+    ItemizedInvoiceCols.CustNum: RJRScanHeaders.account_loyalty_id_number,
+    ItemizedInvoiceCols.loyalty_disc_desc: RJRScanHeaders.coupon_desc,
+  }
 
   @computed_field
   @property
