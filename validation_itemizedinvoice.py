@@ -6,6 +6,7 @@ if __name__ == "__main__":
 from datetime import datetime
 from decimal import Decimal
 from logging import getLogger
+from re import sub
 from typing import Annotated, Literal, Optional
 
 from pydantic import AfterValidator, BeforeValidator, Field
@@ -23,11 +24,15 @@ from validators_shared import (
 logger = getLogger(__name__)
 
 
+def strip_bad_chars(value: str) -> str:
+  """Strip bad characters from a string."""
+  return None if value is None else sub(r"[^0-9a-zA-Z]", "", value)
+
+
 class ItemizedInvoiceModel(CustomBaseModel):
   Invoice_Number: int
   CustNum: Annotated[
     Optional[str],
-    # Field(pattern=r"^[0-9a-zA-Z]*$"),
     BeforeValidator(clear_default_custnums),
   ]
   Phone_1: Annotated[Optional[int], BeforeValidator(strip_string_to_digits)]
@@ -37,7 +42,7 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Cashier_ID: str
   Station_ID: int
   ItemNum: Annotated[str, BeforeValidator(map_to_upca)]
-  ItemName: str
+  ItemName: Annotated[str, AfterValidator(strip_bad_chars)]
   ItemName_Extra: Optional[str]
   DiffItemName: str
   Dept_ID: DeptIDsEnum

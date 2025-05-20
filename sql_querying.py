@@ -16,17 +16,8 @@ from config import SETTINGS
 from logging_config import RICH_CONSOLE
 from pandas import DataFrame
 from pyodbc import Connection, Error, OperationalError, connect
-from rich.progress import (
-  BarColumn,
-  MofNCompleteColumn,
-  Progress,
-  TaskProgressColumn,
-  TextColumn,
-)
 from rich_custom import LiveCustom
-from sql_query_builders import (
-  update_database_name,
-)
+from sql_query_builders import update_database_name
 from types_custom import (
   ColNameEnum,
   QueryDict,
@@ -38,7 +29,7 @@ from types_custom import (
   StoreNum,
   StoreResultsPackage,
 )
-from utils import DoNotCacheException, cached_for_testing, get_full_dates, get_week_of
+from utils import DoNotCacheException, cached_for_testing, get_week_of
 
 logger = getLogger(__name__)
 logger.setLevel(INFO)
@@ -76,7 +67,7 @@ SQL_HOSTNAME_METHOD_DEFAULT: Literal["DNS", "IP"] = 0
 SQL_HOSTNAME_METHODS = ("DNS", "IP")
 
 TAILSCALE_HOSTNAME_PATTERN = "pos-sft{storenum:0>3}.salamander-nunki.ts.net"
-TAILSCALE_IP_ADDRESS_LOOKUP_JSON = (CWD / __file__).with_name("store_ip_address_lookup.json")
+DIRECT_IP_ADDRESS_LOOKUP_JSON = (CWD / __file__).with_name("store_ip_address_lookup.json")
 
 
 def get_store_sql_hostname(
@@ -87,11 +78,18 @@ def get_store_sql_hostname(
     case "DNS":
       return TAILSCALE_HOSTNAME_PATTERN.format(storenum=storenum)
     case "IP":
-      with TAILSCALE_IP_ADDRESS_LOOKUP_JSON.open("r") as file:
+      with DIRECT_IP_ADDRESS_LOOKUP_JSON.open("r") as file:
         ip_address_lookup = json.load(file)
         if str(storenum) not in ip_address_lookup:
           raise ValueError(f"Store {storenum} IP address not found in lookup table")
-      return ip_address_lookup[str(storenum)]
+      return ip_address_lookup[str(storenum)]["ip"]
+
+
+def get_db_name_override(storenum: StoreNum) -> str | Literal[False]:
+  with DIRECT_IP_ADDRESS_LOOKUP_JSON.open("r") as file:
+    db_name = json.load(file).get(str(storenum), None)
+
+  return False if db_name is None else db_name["dbname"]
 
 
 class StoreSQLConn:
@@ -107,7 +105,10 @@ class StoreSQLConn:
   def __init__(self, storenum: StoreNum):
     self.storenum = storenum
     self.cred_data = load_sql_creds()
-    self.hostname = get_store_sql_hostname(storenum)
+    try:
+      self.hostname = get_store_sql_hostname(storenum, hostname_lookup_method="IP")
+    except ValueError:
+      self.hostname = get_store_sql_hostname(storenum, hostname_lookup_method="DNS")
 
   def establish_connection(self) -> Connection:
     try:
@@ -136,7 +137,7 @@ class StoreSQLConn:
           stack_info=True,
         )
         try:
-          self.hostname = get_store_sql_hostname(self.storenum, hostname_lookup_method="IP")
+          self.hostname = get_store_sql_hostname(self.storenum, hostname_lookup_method="DNS")
         except ValueError as exc:
           raise NoConnectionError(f"Failed to connect to store {self.storenum} SQL server") from exc
         try:
@@ -204,7 +205,8 @@ def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsPackage:
   results = QueryResultsPackage(storenum=storenum)
   with StoreSQLConn(storenum) as conn:
     with conn.cursor() as cursor:
-      db_name = cursor.execute(LAST_USED_DB_QUERYFILE.read_text()).fetchone()[0]
+      if not (db_name := get_db_name_override(storenum)):
+        db_name = cursor.execute(LAST_USED_DB_QUERYFILE.read_text()).fetchone()[0]
       with _QUERY_THREADING_LOCK:
         update_database_name(db_name)
 
@@ -320,7 +322,6 @@ def get_store_data(
   )
 
 
-# TODO: Gather list of stores from google sheets
 DEFAULT_STORES_LIST = [
   # 1,
   2,
@@ -351,12 +352,12 @@ DEFAULT_STORES_LIST = [
   28,
   29,
   30,
-  31,
+  # 31,
   32,
   34,
   35,
   36,
-  37,
+  # 37,
   38,
   40,
   42,
@@ -373,21 +374,28 @@ DEFAULT_STORES_LIST = [
   55,
   56,
   57,
-  # 58,
   59,
   60,
-  62,
-  63,
-  64,
+  # 62,
+  # 63,
+  # 64,
   65,
   66,
-  67,
+  # 67,
   82,
   84,
   85,
   86,
   88,
 ]
+
+
+# DEFAULT_STORES_LIST = [
+#   44,
+#   59,
+#   66,
+# ]
+
 
 if SETTINGS.testing_stores:
   DEFAULT_STORES_LIST = SETTINGS.testing_stores
@@ -465,29 +473,3 @@ def query_all_stores_multithreaded[q_name: QueryName](
           pbar.update(store_querying_task, advance=1)
 
   return query_results
-
-
-if __name__ == "__main__":
-  from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
-  from types_column_names import BulkRateCols, ItemizedInvoiceCols
-  from utils import get_full_dates
-
-  start_date, last_sun = get_full_dates()
-  queries: QueryDict = {
-    "bulk_rate_data": QueryPackage(query=build_bulk_info_query(), cols=BulkRateCols),
-    "itemized_invoice_data": QueryPackage(
-      query=build_itemized_invoice_query(start_date, last_sun), cols=ItemizedInvoiceCols
-    ),
-  }
-
-  with Progress(
-    BarColumn(),
-    TaskProgressColumn(),
-    MofNCompleteColumn(),
-    TextColumn("[progress.description]{task.description}"),
-    console=RICH_CONSOLE,
-  ) as pbar:
-    get_store_data(
-      storenum=14,
-      queries=queries,
-    )

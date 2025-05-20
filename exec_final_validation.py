@@ -7,7 +7,14 @@ from dataframe_utils import fillnas
 from pandas import DataFrame, concat, read_csv
 from rich.progress import Progress
 from types_column_names import ItemizedInvoiceCols, PMUSAScanHeaders, RJRNamesFinal, RJRScanHeaders
-from utils import CWD, pm_start_end_dates, rjr_start_end_dates, taskgen_whencalled, truncate_decimal
+from utils import (
+  CWD,
+  decimal_converter,
+  pm_start_end_dates,
+  rjr_start_end_dates,
+  taskgen_whencalled,
+  truncate_decimal,
+)
 from validation_pmusa import FTXPMUSAValidationModel, PMUSAValidationModel
 from validation_rjr import FTXRJRValidationModel, RJRValidationModel
 
@@ -82,20 +89,20 @@ def apply_rjr_validation(
 
   ftx_df = ftx_df.map(fillnas)
 
-  ftx_rows = []
+  # ftx_rows = []
 
-  ftx_df.apply(
-    taskgen_whencalled(
-      pbar,
-      "Validating FTX RJR scan data",
-      len(ftx_df),
-    )(apply_model_to_df_transforming)(),
-    axis=1,
-    new_rows=ftx_rows,
-    model=FTXRJRValidationModel,
-  )
+  # ftx_df.apply(
+  #   taskgen_whencalled(
+  #     pbar,
+  #     "Validating FTX RJR scan data",
+  #     len(ftx_df),
+  #   )(apply_model_to_df_transforming)(),
+  #   axis=1,
+  #   new_rows=ftx_rows,
+  #   model=FTXRJRValidationModel,
+  # )
 
-  ftx_df = concat(new_rows, axis=1).T
+  # ftx_df = concat(ftx_rows, axis=1).T
 
   rjr_df = read_csv(
     StringIO(rjr_scan.to_csv(sep="|", index=False)),
@@ -163,22 +170,27 @@ def apply_altria_validation(
 
   ftx_input = ftx_input.map(fillnas)
 
-  ftx_rows = []
+  # ftx_rows = []
 
-  ftx_input.apply(
-    taskgen_whencalled(
-      pbar,
-      "Validating FTX Altria scan data",
-      len(ftx_input),
-    )(apply_model_to_df_transforming)(),
-    axis=1,
-    new_rows=ftx_rows,
-    model=FTXPMUSAValidationModel,
+  # ftx_input.apply(
+  #   taskgen_whencalled(
+  #     pbar,
+  #     "Validating FTX Altria scan data",
+  #     len(ftx_input),
+  #   )(apply_model_to_df_transforming)(),
+  #   axis=1,
+  #   new_rows=ftx_rows,
+  #   model=FTXPMUSAValidationModel,
+  # )
+
+  # ftx_df = concat(ftx_rows, axis=1).T
+
+  ftx_input[PMUSAScanHeaders.QtySold] = ftx_input[PMUSAScanHeaders.QtySold].astype(int)
+  ftx_input[PMUSAScanHeaders.FinalSalesPrice] = ftx_input[PMUSAScanHeaders.FinalSalesPrice].map(
+    decimal_converter
   )
 
-  ftx_df = concat(new_rows, axis=1).T
-
-  altria_scan_new = concat([altria_scan, ftx_df], ignore_index=True)
+  altria_scan_new = concat([altria_scan, ftx_input], ignore_index=True)
 
   stream = StringIO(newline=None)
 
@@ -199,3 +211,40 @@ def apply_altria_validation(
     "w"
   ) as f:
     f.write(stream.getvalue())
+
+
+# if __name__ == "__main__":
+#   with LiveCustom(
+#     console=RICH_CONSOLE,
+#     # transient=True,
+#   ) as live:
+#     pbar = live.pbar
+#     ftx_input = read_csv(
+#       FTX_ALT_SCAN_FILE_PATH,
+#       sep="|",
+#       header=None,
+#       names=PMUSAScanHeaders.all_columns(),
+#       dtype=str,
+#     )
+
+#     # drop summary line from ftx_df
+#     ftx_input.drop(index=0, inplace=True)
+
+#     ftx_input = ftx_input.map(fillnas)
+
+#     ftx_rows = []
+
+#     ftx_input.apply(
+#       taskgen_whencalled(
+#         pbar,
+#         "Validating FTX Altria scan data",
+#         len(ftx_input),
+#       )(apply_model_to_df_transforming)(),
+#       axis=1,
+#       new_rows=ftx_rows,
+#       model=FTXPMUSAValidationModel,
+#     )
+
+#     ftx_df = concat(ftx_rows, axis=1).T
+
+#     pass

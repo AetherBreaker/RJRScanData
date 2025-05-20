@@ -220,3 +220,7 @@ SFT*.txt
 /store_sql_creds.json
 /ftp_creds.json
 /max_width.txt
+/_testing_pickles TEMP
+/_testing_pickles TMP
+/_testing_pickles tmp2
+/profiler_output.txt

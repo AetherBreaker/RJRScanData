@@ -4,7 +4,7 @@ if __name__ == "__main__":
   configure_logging()
 
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, Self
+from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self
 
 from pydantic import (
   BaseModel,
@@ -18,7 +18,8 @@ from pydantic import (
 )
 
 if TYPE_CHECKING:
-  from types_column_names import ColNameEnum
+  from types_column_names import ColNameEnum, ItemizedInvoiceCols
+  from types_custom import ModelContextType
 
 logger = getLogger(__name__)
 
@@ -26,8 +27,13 @@ logger = getLogger(__name__)
 VALIDATION_FAILED_CHECK_CONSTANT = "VALIDATION_FAILED"
 
 
+class ValidationErrPackage(NamedTuple):
+  field_value: Any
+  err: ValidationError
+
+
 class CustomBaseModel(BaseModel):
-  _field_name_lookup: dict[str, str] = {}
+  field_name_lookup: ClassVar[dict["ItemizedInvoiceCols", type["ColNameEnum"]]] = {}  # noqa: F821
   model_config = ConfigDict(
     populate_by_name=True,
     use_enum_values=True,
@@ -36,9 +42,10 @@ class CustomBaseModel(BaseModel):
     coerce_numbers_to_str=True,
   )
 
-  def lookup_field(self, field_name: "ColNameEnum") -> str:
+  @classmethod
+  def lookup_field(cls, field_name: "ColNameEnum") -> str:
     """Lookup the field name in the _field_name_lookup dictionary."""
-    return self._field_name_lookup.get(field_name, field_name)
+    return cls.field_name_lookup.get(field_name, field_name)
 
   @field_validator("*", mode="wrap", check_fields=False)
   @classmethod
@@ -46,6 +53,7 @@ class CustomBaseModel(BaseModel):
     cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
   ) -> Any:
     results = VALIDATION_FAILED_CHECK_CONSTANT
+    context: "ModelContextType" = info.context
     try:
       results = handler(data)
     except Exception as e:
@@ -53,8 +61,20 @@ class CustomBaseModel(BaseModel):
 
       # if the exception is a ValidationError...
       if isinstance(e, ValidationError):
-        if isinstance(row_errs := info.context.get("row_err"), dict):
-          row_errs[info.field_name] = (data, e)
+        context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
+
+        if not context["skip"]:
+          skip_fields = context.get("skip_fields", {})
+
+          skipcheck_func = skip_fields.get(info.field_name)
+          is_skip_field = info.field_name in skip_fields
+
+          do_skip = is_skip_field and skipcheck_func(data) if skipcheck_func else is_skip_field
+
+          if do_skip:
+            context["skip"] = True
+          else:
+            pass
       else:
         logger.error(
           f"Error validating {info.field_name} in {cls.__name__}: {e}",

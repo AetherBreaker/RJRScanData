@@ -1,12 +1,13 @@
-from datetime import datetime
 from logging import getLogger
 
+from config import SETTINGS
 from exec_initial_validation import validate_and_concat_itemized
 from logging_config import RICH_CONSOLE, configure_logging
 from pandas import DataFrame, concat
 from reporting_validation_errs import LoadReportingFiles
 from rich_custom import LiveCustom
 from sql_query_builders import (
+  build_employee_info_query,
   build_itemized_invoice_query,
 )
 from sql_querying import query_all_stores_multithreaded
@@ -19,32 +20,33 @@ from types_custom import (
   QueryPackage,
   StoreNum,
 )
-from utils import CWD, get_full_dates, taskgen_whencalled
+from utils import CWD, rjr_start_end_dates, taskgen_whencalled
 
 configure_logging()
 
 logger = getLogger(__name__)
 
 
-# full_period_start, full_period_end = get_full_dates()
+full_period_start, full_period_end = rjr_start_end_dates(SETTINGS.week_shift)
 
-full_period_start = datetime(
-  year=2025,
-  month=4,
-  day=9,
-)
+# full_period_start = datetime(
+#   year=2025,
+#   month=4,
+#   day=9,
+# )
 
-full_period_end = datetime(
-  year=2025,
-  month=4,
-  day=28,
-)
+# full_period_end = datetime(
+#   year=2025,
+#   month=4,
+#   day=28,
+# )
 
 
 queries: QueryDict = {
   "invoices": QueryPackage(
     query=build_itemized_invoice_query(full_period_start, full_period_end), cols=ItemizedInvoiceCols
   ),
+  "employees": QueryPackage(build_employee_info_query(), cols=["Cashier_ID", "EmpName"]),
 }
 
 DEFAULT_STORES_LIST = [
@@ -77,7 +79,7 @@ DEFAULT_STORES_LIST = [
   28,
   29,
   30,
-  31,
+  # 31,
   32,
   34,
   35,
@@ -99,7 +101,7 @@ DEFAULT_STORES_LIST = [
   55,
   56,
   57,
-  59,
+  # 59,
   60,
   62,
   63,
@@ -119,6 +121,25 @@ queries_result = query_all_stores_multithreaded(queries=queries, storenums=DEFAU
 
 
 itemized: dict[StoreNum, ItemizedInvoiceDataType] = queries_result["invoices"]
+
+employees: dict[StoreNum, DataFrame] = queries_result["employees"]
+
+
+for storenum, df in employees.items():
+  df["Store_Number"] = storenum
+
+employee_info = concat(
+  list(employees.values()),
+  ignore_index=True,
+)
+
+
+# employee_info.set_index(
+#   keys=["Cashier_ID", "Store_Number"],
+#   drop=False,
+#   inplace=True,
+#   verify_integrity=True,
+# )
 
 PRECOMBINATION_ITEM_LINES_FOLDER = CWD / "item_lines"
 PRECOMBINATION_ITEM_LINES_FOLDER.mkdir(exist_ok=True)
@@ -193,7 +214,7 @@ with LiveCustom(
 
       return group
 
-    applied = groups.apply(
+    applied: DataFrame = groups.apply(
       taskgen_whencalled(
         progress=pbar,
         description="Finding Loyalty Errors",
@@ -203,6 +224,14 @@ with LiveCustom(
 
     bad_invoices = concat(occurred_groups, ignore_index=True, axis=0)
 
+    # replace Cashier_ID with EmpName
+    bad_invoices = bad_invoices.merge(
+      employee_info,
+      how="left",
+      left_on=["Cashier_ID", "Store_Number"],
+      right_on=["Cashier_ID", "Store_Number"],
+    )
+
     bad_invoices = bad_invoices[
       [
         "Store_Name",
@@ -210,16 +239,12 @@ with LiveCustom(
         "CustNum",
         "LineNum",
         "DateTime",
-        "Phone_1",
-        "Cashier_ID",
-        "Station_ID",
+        "EmpName",
         "ItemNum",
         "ItemName",
         "ItemName_Extra",
         "DiffItemName",
         "Dept_ID",
-        "Unit_Type",
-        "Unit_Size",
         "Quantity",
         "CostPer",
         "PricePer",
@@ -229,10 +254,19 @@ with LiveCustom(
         "Store_City",
         "Store_State",
         "Store_Zip",
-        "Store_Telephone",
       ]
     ]
 
+    bad_invoices.sort_values(
+      by=[
+        "Store_Name",
+        "Invoice_Number",
+        "LineNum",
+        "DateTime",
+      ],
+      inplace=True,
+    )
+
     print(len(ocurrences))
 
-    bad_invoices.to_csv("errored_loyalty_lines.csv", index=False)
+    bad_invoices.to_csv(f"errored_loyalty_lines_{full_period_end:%Y%m%d}.csv", index=False)

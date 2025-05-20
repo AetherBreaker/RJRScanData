@@ -6,7 +6,7 @@ if __name__ == "__main__":
 from datetime import datetime
 from decimal import Decimal
 from logging import getLogger
-from typing import Optional
+from typing import ClassVar, Optional
 
 from pydantic import (
   AfterValidator,
@@ -14,7 +14,6 @@ from pydantic import (
   BeforeValidator,
   Field,
   computed_field,
-  create_model,
 )
 from types_column_names import ItemizedInvoiceCols, RJRScanHeaders
 from types_custom import PromoFlag, StatesEnum, StoreNum, UnitsOfMeasureEnum
@@ -94,10 +93,10 @@ class RJRValidationModel(CustomBaseModel):
   ] = None
   account_loyalty_id_number: Annotated[
     Optional[str], Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum")
-  ]
+  ] = None
   coupon_desc: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
 
-  _field_name_lookup = {
+  field_name_lookup: ClassVar[dict[ItemizedInvoiceCols, RJRScanHeaders]] = {
     ItemizedInvoiceCols.Store_Number: RJRScanHeaders.outlet_number,
     ItemizedInvoiceCols.Store_Address: RJRScanHeaders.address_1,
     ItemizedInvoiceCols.Store_Address2: RJRScanHeaders.address_2,
@@ -183,8 +182,7 @@ class RJRValidationModel(CustomBaseModel):
     )
 
 
-FTXRJRValidationModel = create_model(
-  "FTXRJRValidationModel",
-  __base__=RJRValidationModel,
-  scan_id=Annotated[str, Field(alias="LineNum")],
-)
+class FTXRJRValidationModel(RJRValidationModel):
+  """FTX PMUSA Validation Model."""
+
+  scan_id: Annotated[str, Field(alias="LineNum")]

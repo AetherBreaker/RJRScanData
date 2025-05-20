@@ -23,6 +23,7 @@ _table_inventory_coupon: Table = _schema.Inventory_Coupon
 _table_invoice_totals: Table = _schema.Invoice_Totals
 _table_inventory_bulk_info: Table = _schema.Inventory_Bulk_Info
 _table_customer: Table = _schema.Customer
+_table_employee: Table = _schema.Employee
 
 
 def update_database_name(new_db_name: str) -> None:
@@ -261,4 +262,16 @@ def build_volume_report_query(
     )
     .where(_table_invoice_totals.DateTime >= start_date)
     .where(_table_invoice_totals.DateTime < end_date)
+  )
+
+
+def build_employee_info_query() -> QueryBuilder:
+  """Build a query to retrieve employee info.
+
+  :return: QueryBuilder to retrieve employee info.
+  :rtype: QueryBuilder
+  """
+  return Query.from_(_table_employee).select(
+    _table_itemized_invoices.Cashier_ID,
+    _table_itemized_invoices.EmpName,
   )

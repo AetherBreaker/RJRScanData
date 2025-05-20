@@ -102,6 +102,14 @@ with LiveCustom(
       inplace=True,
     )
 
+    rjr_item_lines[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = None
+    rjr_item_lines[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = None
+
+    # from cProfile import Profile
+
+    # profiler = Profile(subcalls=False, builtins=False)
+    # profiler.enable()
+
     rjr_item_lines = process_promo_data(
       item_lines=rjr_item_lines,
       live=live,
@@ -111,9 +119,16 @@ with LiveCustom(
       vap_data=vap_data,
     )
 
-    rjr_item_lines.to_csv("item_lines.csv")
+    # from pathlib import Path
+
+    # OUTPUT = Path.cwd() / "profiler_output.txt"
+    # profiler.disable()
+    # profiler.dump_stats(str(OUTPUT))
+    # exit()
 
     altria_item_lines = rjr_item_lines.copy(deep=True)
+
+    altria_item_lines.to_csv("item_lines.csv", index=False)
 
     apply_altria_validation(
       pbar=pbar,

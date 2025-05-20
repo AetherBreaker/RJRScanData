@@ -6,7 +6,7 @@ if __name__ == "__main__":
 from datetime import date, datetime, time
 from decimal import Decimal
 from logging import getLogger
-from typing import Annotated, Optional
+from typing import Annotated, ClassVar, Optional
 
 from dateutil.relativedelta import SA, relativedelta
 from pydantic import (
@@ -16,7 +16,6 @@ from pydantic import (
   Field,
   FieldSerializationInfo,
   computed_field,
-  create_model,
   field_serializer,
 )
 from types_column_names import ItemizedInvoiceCols, PMUSAScanHeaders
@@ -108,7 +107,9 @@ class PMUSAValidationModel(CustomBaseModel):
   StoreContactEmail: Annotated[Optional[str], Field(alias="Store_ContactEmail")]
   ProductGroupingCode: Optional[str] = None
   ProductGroupingName: Optional[str] = None
-  LoyaltyIDNumber: Annotated[Optional[str], Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum")]
+  LoyaltyIDNumber: Annotated[Optional[str], Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum")] = (
+    None
+  )
   AdultTobConsumerPhoneNum: Annotated[
     Optional[str], BeforeValidator(truncate_phonenum), Field(alias="Phone_1")
   ] = None
@@ -135,7 +136,7 @@ class PMUSAValidationModel(CustomBaseModel):
     Optional[time], Field(alias="TransactionTime", exclude=True)
   ] = None
 
-  _field_name_lookup = {
+  field_name_lookup: ClassVar[dict[ItemizedInvoiceCols, PMUSAScanHeaders]] = {
     ItemizedInvoiceCols.Invoice_Number: PMUSAScanHeaders.TransactionID,
     ItemizedInvoiceCols.Store_Number: PMUSAScanHeaders.StoreNumber,
     ItemizedInvoiceCols.Store_Name: PMUSAScanHeaders.StoreName,
@@ -233,12 +234,14 @@ class PMUSAValidationModel(CustomBaseModel):
     )
 
 
-FTXPMUSAValidationModel = create_model(
-  "FTXPMUSAValidationModel",
-  __base__=PMUSAValidationModel,
-  Category=Annotated[FTXDeptIDsEnum, Field(alias="Dept_ID")],
-  DateTime=Annotated[
-    Optional[datetime],
-    Field(default=None, alias="DateTime", exclude=True),
-  ],
-)
+class FTXPMUSAValidationModel(PMUSAValidationModel):
+  """FTX PMUSA Validation Model."""
+
+  Category: Annotated[FTXDeptIDsEnum, Field(alias="Dept_ID")]
+  DateTime: Annotated[Optional[datetime], Field(default=None, alias="DateTime", exclude=True)]
+
+  @computed_field
+  @property
+  def FinalSalesPrice(self) -> Decimal:
+    """Calculate the final price."""
+    return truncate_decimal(self.Price_at_sale)

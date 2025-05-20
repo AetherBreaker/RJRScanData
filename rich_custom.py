@@ -199,7 +199,6 @@ class ChoicePrompt(PromptBase[int]):
       else:
         return return_value
 
-  # TODO
   def clear_prompt(self) -> None:
     if self._shape is not None:
       _, height = self._shape

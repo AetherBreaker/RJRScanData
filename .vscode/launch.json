@@ -18,6 +18,30 @@
             "program": "${workspaceFolder}\\exec.py",
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "Profile Project",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\profile_exec.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "View Profile",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\profile_view.py",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Pull Transaction Errors",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\ext_check_trans_errs.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }

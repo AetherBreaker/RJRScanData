@@ -10,10 +10,9 @@ from logging import getLogger
 from typing import Any, Literal, NamedTuple, TypedDict
 
 from pandas import DataFrame
-from pydantic import ValidationError
 from pyodbc import Row
 from pypika.queries import QueryBuilder
-from validation_config import CustomBaseModel
+from validation_config import CustomBaseModel, ValidationErrPackage
 
 logger = getLogger(__name__)
 
@@ -358,16 +357,12 @@ class SQLCreds(TypedDict):
 
 class ModelContextType(TypedDict):
   row_err: dict[str, "ValidationErrPackage"]
-  skip_fields: dict[str, Callable | None]
+  skip_fields: dict[str, Callable[[Any], bool] | None]
   store_num: StoreNum
   input: dict[str, Any]
   row_id: int
   model: CustomBaseModel
-
-
-class ValidationErrPackage(NamedTuple):
-  field_value: Any
-  err: ValidationError
+  skip: bool
 
 
 class BulkDataPackage(NamedTuple):

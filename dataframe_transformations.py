@@ -4,6 +4,7 @@ if __name__ == "__main__":
 
   configure_logging()
 
+from copy import deepcopy
 from decimal import Decimal
 from itertools import chain
 from logging import getLogger
@@ -27,6 +28,7 @@ from types_column_names import (
   GSheetsBuydownsCols,
   GSheetsVAPDiscountsCols,
   ItemizedInvoiceCols,
+  PMUSAScanHeaders,
 )
 from types_custom import (
   AddressInfoType,
@@ -53,8 +55,12 @@ from validators_shared import map_to_upca
 logger = getLogger(__name__)
 
 
-base_context = {
-  "skip_fields": {"Dept_ID": None, "Quantity": None},
+base_context: ModelContextType = {
+  "skip_fields": {
+    "Dept_ID": None,
+    "Quantity": None,
+  },
+  "skip": False,
 }
 
 USSTC_BRAND_GROUPS = {
@@ -286,6 +292,19 @@ MULTIPACK_IDENTIFIERS = {
   "HelixMultiCanWI": HELIX_BRAND_GROUPS,
 }
 
+
+COUPON_IDENTIFIER_CODES = {
+  "USSTCLoyaltyIA": "073100070013",
+  "USSTCLoyaltyMI": "073100070013",
+  "USSTCLoyaltyOH": "073100070013",
+  "USSTCLoyaltyWI": "073100070013",
+  "HelixLoyaltyIA": "840090050004",
+  "HelixLoyaltyMI": "840090050004",
+  "HelixLoyaltyOH": "840090050004",
+  "HelixLoyaltyWI": "840090050004",
+}
+
+
 LOYALTY_COUPON_DEPARTMENTS = ["PMCOUPON", "HelxCoup", "USSTCoup"]
 
 ALL_COUPON_DEPARTMENTS = REGULAR_COUPON_DEPARTMENTS + LOYALTY_COUPON_DEPARTMENTS
@@ -306,7 +325,7 @@ def context_setup[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     *args: P.args,
     **kwargs: P.kwargs,
   ) -> R:
-    context = base_context.copy()
+    context = deepcopy(base_context)
 
     update = {
       "row_id": row.name,
@@ -357,20 +376,20 @@ def apply_model_to_df_transforming(
   :return: The transformed row.
   """
 
-  # invoicenum = context["input"].get(ItemizedInvoiceCols.Invoice_Number, None)
-
-  # if invoicenum in ["36129", 36129]:
-  #   pass
-
   context["model"] = model
+  context["skip_fields"].update(
+    {
+      model.lookup_field(ItemizedInvoiceCols.CustNum): None,
+      model.lookup_field(ItemizedInvoiceCols.ItemNum): None,
+      PMUSAScanHeaders.SKUCode: None,
+    }
+  )
 
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
-  if context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.CustNum)):
-    return row
-
-  if context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.ItemNum)):
+  if context["skip"]:
+    # if the model is invalid, skip the row
     return row
 
   # serialize the model to a dict
@@ -525,6 +544,8 @@ def apply_addrinfo_and_initial_validation(
   :param model: The model to apply.
   :return: The transformed row.
   """
+  if row[ItemizedInvoiceCols.ItemName] == "Cigar Promo 100% Discount":
+    return row
 
   if row[ItemizedInvoiceCols.CustNum] == "101":
     pass
@@ -535,17 +556,17 @@ def apply_addrinfo_and_initial_validation(
 
   context["input"].update(address_info)
 
+  context["skip_fields"].update(
+    {
+      model.lookup_field(ItemizedInvoiceCols.Quantity): lambda x: isinstance(x, Decimal),
+      model.lookup_field(ItemizedInvoiceCols.CustNum): None,
+    }
+  )
+
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
-  if quantity_err := context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.Quantity)):
-    if isinstance(quantity_err[0], Decimal):
-      return row
-
-  if context["row_err"].get(model.lookup_field(ItemizedInvoiceCols.CustNum)):
-    return row
-
-  if row[ItemizedInvoiceCols.ItemName] == "Cigar Promo 100% Discount":
+  if context["skip"]:
     return row
 
   # serialize the model to a dict
@@ -565,6 +586,12 @@ def process_item_lines(
   vap_data: VAPDataType,
 ) -> DataFrame:  # sourcery skip: remove-redundant-if
   if group.empty:
+    return group
+
+  # if the group is nothing but coupon departments, then this invoice only contained items
+  # that don't need to be reported
+  if group[ItemizedInvoiceCols.Dept_ID].isin(ALL_COUPON_DEPARTMENTS).all():
+    group.drop(index=group.index, inplace=True)
     return group
 
   # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
@@ -622,7 +649,7 @@ def apply_buydowns(group: DataFrame, buydowns_data: BuydownsDataType) -> DataFra
 
       buydown_amt = buydown_row[GSheetsBuydownsCols.Buydown_Amt]
 
-      if buydown_amt is not None:
+      if buydown_amt is not None or not isna(buydown_amt):
         buydown_desc = buydown_row[GSheetsBuydownsCols.Buydown_Desc]
 
         fixed_item_price = row[ItemizedInvoiceCols.Inv_Price] + buydown_amt
@@ -644,12 +671,6 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
   is_coupon = dept_ids.isin(REGULAR_COUPON_DEPARTMENTS)
 
   is_coupon_applicable = ~dept_ids.isin(ALL_COUPON_DEPARTMENTS)
-
-  # if the group is nothing by coupon departments, then this invoice only contained items
-  # that don't need to be reported
-  if is_coupon.all():
-    group.drop(index=group.index, inplace=True)
-    return group
 
   # check if any of the dept_ids are in the COUPON_DEPARTMENTS list
   has_coupon = any(is_coupon)
@@ -728,15 +749,13 @@ def identify_multipack(group: DataFrame):
     return group
 
   # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
-
-  # if invoicenum in [129451, "129451"]:
+  # if invoicenum in [211392, "211392"]:
   #   pass
 
-  group[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = None
-  group[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = None
+  retail_multipack_rows = group.loc[group[ItemizedInvoiceCols.MixNMatchRate].notna()]
 
   # sourcery skip: move-assign, remove-redundant-if
-  for index, row in group.iterrows():
+  for index, row in retail_multipack_rows.iterrows():
     if mixnmatchrate := row[ItemizedInvoiceCols.MixNMatchRate]:
       uom = row[ItemizedInvoiceCols.Unit_Type] or ""
       if isna(uom):
@@ -775,83 +794,78 @@ def identify_multipack(group: DataFrame):
 
   itemnums = group[ItemizedInvoiceCols.ItemNum]
 
-  is_coupon = group[ItemizedInvoiceCols.Dept_ID].isin(ALL_COUPON_DEPARTMENTS)
-
   is_multiunit_coupon = itemnums.isin(MULTIPACK_IDENTIFIERS.keys())
 
-  # if the group is nothing but coupon departments, then this invoice only contained items
-  # that don't need to be reported
-  if is_coupon.all():
-    group.drop(index=group.index, inplace=True)
-    return group
-
   # check if any of the dept_ids are in the COUPON_DEPARTMENTS list
-  has_multiunit_coupon = any(is_multiunit_coupon)
 
   # check if the group has multiple lines in a valid coupon department
   # has_multiple_coupons = sum(is_coupon) > 1
 
-  if has_multiunit_coupon:
-    multiunit_coupon_line_indexes = group.loc[is_multiunit_coupon].index
+  multiunit_coupon_line_indexes = group.loc[is_multiunit_coupon].index
 
-    multiunit_coupon_data = {}
+  multiunit_coupon_data = {}
 
-    for multiunit_coupon_index in multiunit_coupon_line_indexes:
-      multiunit_coupon_row: Series = group.loc[multiunit_coupon_index]
-      multiunit_coupon_itemnum: str = multiunit_coupon_row[ItemizedInvoiceCols.ItemNum]
+  for multiunit_coupon_index in multiunit_coupon_line_indexes:
+    multiunit_coupon_row: Series = group.loc[multiunit_coupon_index]
+    multiunit_coupon_itemnum: str = multiunit_coupon_row[ItemizedInvoiceCols.ItemNum]
 
-      coupon_data = multiunit_coupon_data.get(multiunit_coupon_itemnum, {"quantity": 0})
+    coupon_data = multiunit_coupon_data.get(multiunit_coupon_itemnum, {"quantity": 0})
 
-      coupon_data.update(
-        {
-          "price_per": multiunit_coupon_row[ItemizedInvoiceCols.PricePer],
-          "code": multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
-        }
+    coupon_data.update(
+      {
+        "price_per": multiunit_coupon_row[ItemizedInvoiceCols.PricePer],
+        "code": multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
+      }
+    )
+
+    coupon_data["quantity"] += multiunit_coupon_row[ItemizedInvoiceCols.Quantity]
+
+    multiunit_coupon_data[multiunit_coupon_itemnum] = coupon_data
+
+    group.drop(index=multiunit_coupon_index, inplace=True)
+
+  for multiunit_coupon_itemnum, coupon_data in multiunit_coupon_data.items():
+    multiunit_coupon_code = coupon_data["code"]
+    multiunit_coupon_value = coupon_data["price_per"]
+    multiunit_coupon_quantity = coupon_data["quantity"]
+
+    applicable_itemnums = MULTIPACK_IDENTIFIERS.get(multiunit_coupon_itemnum)
+
+    if applicable_itemnums is None:
+      logger.error(
+        f"Unable to find applicable departments for loyalty coupon {multiunit_coupon_itemnum}"
       )
+      continue
 
-      coupon_data["quantity"] += multiunit_coupon_row[ItemizedInvoiceCols.Quantity]
+    is_multiunit_applicable = itemnums.isin(applicable_itemnums)
 
-      multiunit_coupon_data[multiunit_coupon_itemnum] = coupon_data
-
-      group.drop(index=multiunit_coupon_index, inplace=True)
-
-    for multiunit_coupon_itemnum, coupon_data in multiunit_coupon_data.items():
-      multiunit_coupon_code = coupon_data["code"]
-      multiunit_coupon_value = coupon_data["price_per"]
-      multiunit_coupon_quantity = coupon_data["quantity"]
-
-      applicable_itemnums = MULTIPACK_IDENTIFIERS.get(multiunit_coupon_itemnum)
-
-      if applicable_itemnums is None:
-        logger.error(
-          f"Unable to find applicable departments for loyalty coupon {multiunit_coupon_itemnum}"
-        )
-        continue
-
-      is_multiunit_applicable = itemnums.isin(applicable_itemnums)
-
-      group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
-        multiunit_coupon_code
+    if not is_multiunit_applicable.any():
+      logger.error(
+        f"No applicable items found for multipack coupon {multiunit_coupon_itemnum} "
+        f"in invoice {group[ItemizedInvoiceCols.Invoice_Number].iloc[0]} for store {group[ItemizedInvoiceCols.Store_Number].iloc[0]}"
       )
-      group.loc[
-        is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt
-      ] = multiunit_coupon_value / 2
-      group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Quantity] = 2
+      continue
 
-      invoice_applicable_quantities = group.loc[
-        is_multiunit_applicable, ItemizedInvoiceCols.Quantity
-      ]
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
+      multiunit_coupon_code
+    )
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt] = (
+      multiunit_coupon_value / 2
+    )
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Quantity] = 2
 
-      distributed_discounts, distributed_quantities = distribute_multipack(
-        invoice_applicable_quantities, multiunit_coupon_value, multiunit_coupon_quantity
-      )
+    invoice_applicable_quantities = group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Quantity]
 
-      group.loc[
-        is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt
-      ] = distributed_discounts
-      group.loc[
-        is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity
-      ] = distributed_quantities
+    distributed_discounts, distributed_quantities = distribute_multipack(
+      invoice_applicable_quantities, multiunit_coupon_value, multiunit_coupon_quantity
+    )
+
+    group.loc[
+      is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt
+    ] = distributed_discounts
+    group.loc[
+      is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity
+    ] = distributed_quantities
 
   return group
 
@@ -871,15 +885,7 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
 
   itemnums = group[ItemizedInvoiceCols.ItemNum]
 
-  is_coupon = dept_ids.isin(ALL_COUPON_DEPARTMENTS)
-
   is_loyalty_coupon = itemnums.isin(LOYALTY_IDENTIFIERS.keys())
-
-  # if the group is nothing but coupon departments, then this invoice only contained items
-  # that don't need to be reported
-  if is_coupon.all():
-    group.drop(index=group.index, inplace=True)
-    return group
 
   # check if any of the dept_ids are in the COUPON_DEPARTMENTS list
   has_loyalty_coupon = any(is_loyalty_coupon)
@@ -901,7 +907,9 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
       coupon_data.update(
         {
           "price_per": loyalty_coupon_row[ItemizedInvoiceCols.PricePer],
-          "code": loyalty_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
+          "code": COUPON_IDENTIFIER_CODES[loyalty_coupon_itemnum]
+          if loyalty_coupon_itemnum in COUPON_IDENTIFIER_CODES
+          else loyalty_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
         }
       )
 

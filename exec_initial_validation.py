@@ -9,7 +9,6 @@ from dataframe_transformations import (
 from gsheet_data_processing import SheetCache
 from pandas import concat
 from rich.progress import Progress
-from rich.table import Table
 from rich_custom import LiveCustom
 from sql_querying import CUR_WEEK
 from types_column_names import ItemizedInvoiceCols
@@ -96,7 +95,7 @@ def validate_bulk(
   return bulk_results
 
 
-@cached_for_testing(date_for_sig=CUR_WEEK)
+# @cached_for_testing(date_for_sig=CUR_WEEK)
 def process_promo_data[T: ItemizedInvoiceDataType](
   item_lines: Annotated[T, "ignore_for_sig"],
   live: Annotated[LiveCustom, "ignore_for_sig"],
@@ -111,10 +110,6 @@ def process_promo_data[T: ItemizedInvoiceDataType](
     group_keys=False,
     dropna=False,
   )[item_lines.columns]
-
-  updated_display = Table.grid()
-  updated_display.add_row(pbar)
-  live.update(updated_display, refresh=True)
 
   item_lines = store_invoice_groups.apply(
     taskgen_whencalled(

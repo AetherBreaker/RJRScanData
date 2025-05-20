@@ -10,7 +10,7 @@ from rich.traceback import Traceback
 
 RICH_CONSOLE = Console()
 
-project_name = "ScanData"
+PROJECT_NAME = "RJRScanData"
 
 max_width = 40
 
@@ -40,8 +40,8 @@ class FixedRichHandler(RichHandler):
 
     if "site-packages" in pathpath.parts:
       libname_index = pathpath.parts.index("site-packages") + 1
-    elif project_name in pathpath.parts:
-      libname_index = pathpath.parts.index(project_name)
+    elif PROJECT_NAME in pathpath.parts:
+      libname_index = pathpath.parts.index(PROJECT_NAME)
     elif "Lib" in pathpath.parts:
       libname_index = pathpath.parts.index("Lib") + 1
     else:
@@ -73,15 +73,15 @@ class FixedLogRecord(logging.LogRecord):
     if "site-packages" in pathpath.parts:
       libname_index = pathpath.parts.index("site-packages") + 1
       libname = pathpath.parts[libname_index]
-    elif project_name in pathpath.parts:
-      libname_index = pathpath.parts.index(project_name)
+    elif PROJECT_NAME in pathpath.parts:
+      libname_index = pathpath.parts.index(PROJECT_NAME)
       libname = pathpath.parts[libname_index]
     elif "Lib" in pathpath.parts:
       libname_index = pathpath.parts.index("Lib") + 1
       libname = pathpath.parts[libname_index]
     else:
       libname_index = 0
-      libname = project_name
+      libname = PROJECT_NAME
 
     libpath = ".".join(pathpath.parts[libname_index:])
 
