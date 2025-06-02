@@ -1,11 +1,14 @@
 from logging import getLogger
 
 from config import SETTINGS
-from exec_final_validation import apply_altria_validation, apply_rjr_validation
+from exec_final_validation import (
+  apply_altria_validation,
+  apply_itg_validation,
+  apply_rjr_validation,
+)
 from exec_initial_validation import process_promo_data, validate_and_concat_itemized, validate_bulk
 from gsheet_data_processing import SheetCache
 from logging_config import RICH_CONSOLE, configure_logging
-from reporting_validation_errs import LoadReportingFiles
 from rich_custom import LiveCustom
 from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
 from sql_querying import DEFAULT_STORES_LIST, query_all_stores_multithreaded
@@ -75,66 +78,70 @@ with LiveCustom(
 ) as live:
   pbar = live.pbar
 
-  with LoadReportingFiles():
-    remaining_callable = live.init_remaining((items, "Itemized Invoices"))
-    rjr_item_lines = validate_and_concat_itemized(
-      pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty
-    )
+  # with LoadReportingFiles():
+  remaining_callable = live.init_remaining((items, "Itemized Invoices"))
+  base_item_lines = validate_and_concat_itemized(
+    pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty
+  )
 
-    if empty:
-      for storenum in empty:
-        bulk.pop(storenum)
+  if empty:
+    for storenum in empty:
+      bulk.pop(storenum)
 
-    remaining_callable = live.init_remaining((items, "Bulk Rates"))
-    bulk_rates = validate_bulk(pbar, remaining_callable, bulk)
+  remaining_callable = live.init_remaining((items, "Bulk Rates"))
+  bulk_rates = validate_bulk(pbar, remaining_callable, bulk)
 
-    rjr_item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
+  base_item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
 
-    rjr_item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = rjr_item_lines[
-      ItemizedInvoiceCols.Unit_Type
-    ].map(unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure])
+  base_item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = base_item_lines[
+    ItemizedInvoiceCols.Unit_Type
+  ].map(unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure])
 
-    rjr_item_lines.sort_values(
-      by=[
-        ItemizedInvoiceCols.Store_Number,
-        ItemizedInvoiceCols.DateTime,
-      ],
-      inplace=True,
-    )
+  base_item_lines.sort_values(
+    by=[
+      ItemizedInvoiceCols.Store_Number,
+      ItemizedInvoiceCols.DateTime,
+    ],
+    inplace=True,
+  )
 
-    rjr_item_lines[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = None
-    rjr_item_lines[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = None
+  base_item_lines[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = None
+  base_item_lines[ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = None
 
-    # from cProfile import Profile
+  # from cProfile import Profile
 
-    # profiler = Profile(subcalls=False, builtins=False)
-    # profiler.enable()
+  # profiler = Profile(subcalls=False, builtins=False)
+  # profiler.enable()
 
-    rjr_item_lines = process_promo_data(
-      item_lines=rjr_item_lines,
-      live=live,
-      bulk_rates=bulk_rates,
-      pbar=pbar,
-      buydowns_data=buydowns_data,
-      vap_data=vap_data,
-    )
+  base_item_lines = process_promo_data(
+    item_lines=base_item_lines,
+    live=live,
+    bulk_rates=bulk_rates,
+    pbar=pbar,
+    buydowns_data=buydowns_data,
+    vap_data=vap_data,
+  )
 
-    # from pathlib import Path
+  # from pathlib import Path
 
-    # OUTPUT = Path.cwd() / "profiler_output.txt"
-    # profiler.disable()
-    # profiler.dump_stats(str(OUTPUT))
-    # exit()
+  # OUTPUT = Path.cwd() / "profiler_output.txt"
+  # profiler.disable()
+  # profiler.dump_stats(str(OUTPUT))
+  # exit()
 
-    altria_item_lines = rjr_item_lines.copy(deep=True)
+  altria_item_lines = base_item_lines.copy(deep=True)
+  rjr_item_lines = base_item_lines.copy(deep=True)
+  itg_item_lines = base_item_lines.copy(deep=True)
 
-    altria_item_lines.to_csv("item_lines.csv", index=False)
-
-    apply_altria_validation(
-      pbar=pbar,
-      input_data=altria_item_lines,
-    )
-    apply_rjr_validation(
-      pbar=pbar,
-      input_data=rjr_item_lines,
-    )
+  apply_altria_validation(
+    pbar=pbar,
+    input_data=altria_item_lines,
+  )
+  apply_rjr_validation(
+    pbar=pbar,
+    input_data=rjr_item_lines,
+  )
+  apply_itg_validation(
+    pbar=pbar,
+    input_data=itg_item_lines,
+  )

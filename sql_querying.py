@@ -362,7 +362,7 @@ DEFAULT_STORES_LIST = [
   40,
   42,
   43,
-  44,
+  # 44,
   45,
   46,
   48,
@@ -374,13 +374,13 @@ DEFAULT_STORES_LIST = [
   55,
   56,
   57,
-  59,
+  # 59,
   60,
   # 62,
   # 63,
   # 64,
   65,
-  66,
+  # 66,
   # 67,
   82,
   84,
@@ -399,8 +399,6 @@ DEFAULT_STORES_LIST = [
 
 if SETTINGS.testing_stores:
   DEFAULT_STORES_LIST = SETTINGS.testing_stores
-
-# DEFAULT_STORES_LIST = [62]
 
 
 # @cached_for_testing(

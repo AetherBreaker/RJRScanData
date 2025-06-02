@@ -10,7 +10,7 @@ from itertools import chain
 from logging import getLogger
 from re import compile
 from string import Template
-from typing import Annotated, Callable, Type
+from typing import Annotated, Callable, Optional, ParamSpec, TypeVar
 
 from dataframe_utils import (
   NULL_VALUES,
@@ -20,7 +20,6 @@ from dataframe_utils import (
   fix_decimals,
 )
 from pandas import DataFrame, Series, concat, isna
-from reporting_validation_errs import report_errors
 from rich.progress import Progress
 from sql_querying import CUR_WEEK
 from types_column_names import (
@@ -28,7 +27,6 @@ from types_column_names import (
   GSheetsBuydownsCols,
   GSheetsVAPDiscountsCols,
   ItemizedInvoiceCols,
-  PMUSAScanHeaders,
 )
 from types_custom import (
   AddressInfoType,
@@ -39,12 +37,14 @@ from types_custom import (
   ItemizedDataPackage,
   ItemizedInvoiceDataType,
   ModelContextType,
+  RowErrPackage,
   StoreNum,
   VAPDataType,
 )
 from utils import (
   cached_for_testing,
   convert_storenum_to_str,
+  is_not_integer,
   taskgen_whencalled,
   wraps,
 )
@@ -54,14 +54,6 @@ from validators_shared import map_to_upca
 
 logger = getLogger(__name__)
 
-
-base_context: ModelContextType = {
-  "skip_fields": {
-    "Dept_ID": None,
-    "Quantity": None,
-  },
-  "skip": False,
-}
 
 USSTC_BRAND_GROUPS = {
   "Copenhagen Premium": {
@@ -313,56 +305,126 @@ mixnmatch_rate_pattern = Template(r"(?P<Quantity>\d+) ${uom}/\$$(?P<Price>[\d\.]
 
 VALID_MANUFACTURER_MULTIPACK_PATTERNS: dict[tuple[tuple[int, Decimal]], str] = {}
 
-rjr_depts = DeptIDsEnum.rjr_depts()
-pm_depts = DeptIDsEnum.pm_depts()
+rjr_depts = DeptIDsEnum.rjr_depts_set()
+pm_depts = DeptIDsEnum.pm_depts_set()
 scan_depts = rjr_depts.union(pm_depts)
 
 
-def context_setup[**P, R](func: Callable[P, R]) -> Callable[P, R]:
-  @wraps(func)
-  def wrapper(
-    row: Series,
-    *args: P.args,
-    **kwargs: P.kwargs,
-  ) -> R:
-    context = deepcopy(base_context)
+base_context: ModelContextType = {
+  "fields_to_not_remove": set(),
+  "fields_to_not_report": {"Dept_ID"},
+  "special_dont_report_conditions": {"Quantity": is_not_integer},
+  "special_dont_remove_conditions": {"Quantity": is_not_integer},
+  "remove_row": ...,
+  "row_id": ...,
+  "input": ...,
+  "row_err": ...,
+}
 
-    update = {
-      "row_id": row.name,
-      "input": row.to_dict(),
-      "row_err": {},
-    }
 
-    # if key storenum in row
-    if ItemizedInvoiceCols.Store_Number in row.index:
-      update["store_num"] = row[ItemizedInvoiceCols.Store_Number]
+CTXFuncP = ParamSpec("CTXFuncP")
+CTXFuncR = TypeVar("CTXFuncR")
 
-    context.update(update)
 
-    result = func(
-      *args,
-      **kwargs,
-      context=context,
-      row=row,
+def context_setup[CTXFuncT: Callable[CTXFuncP, CTXFuncR]](
+  model: type[CustomBaseModel],
+  xtra_rules: ModelContextType = {},
+  errors: Optional[list[RowErrPackage]] = None,
+) -> Callable[[CTXFuncT], CTXFuncT]:
+  context = deepcopy(base_context)
+
+  context["fields_to_not_remove"] = {
+    model.lookup_field(field)
+    for field in context["fields_to_not_remove"].union(
+      xtra_rules.pop("fields_to_not_remove", set())
     )
+  }
+  context["fields_to_not_report"] = {
+    model.lookup_field(field)
+    for field in context["fields_to_not_report"].union(
+      xtra_rules.pop("fields_to_not_report", set())
+    )
+  }
+  context["special_dont_report_conditions"].update(
+    xtra_rules.pop("special_dont_report_conditions", {})
+  )
+  context["special_dont_remove_conditions"].update(
+    xtra_rules.pop("special_dont_remove_conditions", {})
+  )
 
-    if context["row_err"]:
-      # try:
-      report_errors(context)
-      # except Exception as e:
-      #   logger.error(f"Error reporting errors for row {row.name}: {e}")
+  context["special_dont_report_conditions"] = {
+    model.lookup_field(field): func
+    for field, func in context["special_dont_report_conditions"].items()
+  }
+  context["special_dont_remove_conditions"] = {
+    model.lookup_field(field): func
+    for field, func in context["special_dont_remove_conditions"].items()
+  }
+  context["model"] = model
 
-    return result
+  def decorator[**P, R](func: Callable[P, R]) -> Callable[P, R]:
+    @wraps(func)
+    def wrapper(
+      row: Series,
+      *args: P.args,
+      **kwargs: P.kwargs,
+    ) -> R:
+      update = {
+        "row_id": row.name,
+        "input": row.to_dict(),
+        "row_err": {},
+        "remove_row": {},
+      }
 
-  return wrapper
+      # if key storenum in row
+      if ItemizedInvoiceCols.Store_Number in row.index:
+        update["store_num"] = row[ItemizedInvoiceCols.Store_Number]
+
+      context.update(update)
+
+      result = func(
+        *args,
+        **kwargs,
+        model=model,
+        context=context,
+        row=row,
+      )
+
+      if context["row_err"] and errors is not None:
+        dont_report_fields = context["fields_to_not_report"]
+        for field_name, (field_input, err) in context["row_err"].items():
+          if field_name != "Category":
+            pass
+
+          dont_report_check_func = context["special_dont_report_conditions"].get(field_name)
+          is_dont_report_field = field_name in dont_report_fields
+
+          dont_report = (
+            is_dont_report_field or dont_report_check_func(field_input)
+            if dont_report_check_func
+            else is_dont_report_field
+          )
+          if not dont_report:
+            errors.append(
+              RowErrPackage(
+                field_name=field_name,
+                err_reason=err,
+                row=row,
+              )
+            )
+
+      return result
+
+    return wrapper
+
+  return decorator
 
 
-@context_setup
 def apply_model_to_df_transforming(
   context: ModelContextType,
   row: Series,
   new_rows: list[Series],
-  model: Type[CustomBaseModel],
+  model: type[CustomBaseModel],
 ) -> Series:
   """
   Apply a model to a row of a DataFrame.
@@ -376,19 +438,19 @@ def apply_model_to_df_transforming(
   :return: The transformed row.
   """
 
-  context["model"] = model
-  context["skip_fields"].update(
-    {
-      model.lookup_field(ItemizedInvoiceCols.CustNum): None,
-      model.lookup_field(ItemizedInvoiceCols.ItemNum): None,
-      PMUSAScanHeaders.SKUCode: None,
-    }
-  )
+  # if context["input"].get(ItemizedInvoiceCols.Invoice_Number) in ["105996", 105996]:
+  #   pass
+
+  # context["skip_fields"].update()
+
+  # context["skip_fields"] = {
+  #   model.lookup_field(field): skip_func for field, skip_func in context["skip_fields"].items()
+  # }
 
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
-  if context["skip"]:
+  if any(context["remove_row"].values()):
     # if the model is invalid, skip the row
     return row
 
@@ -403,11 +465,10 @@ def apply_model_to_df_transforming(
   return row
 
 
-@context_setup
 def apply_model_to_df(
   row: Series,
   context: ModelContextType,
-  model: Type[CustomBaseModel],
+  model: type[CustomBaseModel],
 ) -> Series:
   """
   Apply a model to a row of a DataFrame.
@@ -494,15 +555,21 @@ def itemized_inv_first_validation_pass(
 
   series_to_concat = []
 
+  rules = {ItemizedInvoiceCols.CustNum: None}
+
   itemized_invoice_data.apply(
     taskgen_whencalled(
       pbar,
       description=f"Validating {storenum:0>3} itemized invoices",
       total=len(itemized_invoice_data),
       clear_when_finished=True,
-    )(apply_addrinfo_and_initial_validation)(),
+    )(
+      context_setup(
+        model=ItemizedInvoiceModel,
+        xtra_rules=rules,
+      )(apply_addrinfo_and_initial_validation)
+    )(),
     axis=1,
-    model=ItemizedInvoiceModel,
     new_rows=series_to_concat,
     addr_data=addr_info,
   )
@@ -526,12 +593,12 @@ def itemized_inv_first_validation_pass(
   )
 
 
-@context_setup
+# @context_setup
 def apply_addrinfo_and_initial_validation(
   row: Series,
   context: ModelContextType,
   new_rows: list[Series],
-  model: Type[CustomBaseModel],
+  model: type[CustomBaseModel],
   addr_data: AddressInfoType,
 ) -> Series:
   # sourcery skip: remove-empty-nested-block, remove-redundant-if
@@ -547,8 +614,8 @@ def apply_addrinfo_and_initial_validation(
   if row[ItemizedInvoiceCols.ItemName] == "Cigar Promo 100% Discount":
     return row
 
-  if row[ItemizedInvoiceCols.CustNum] == "101":
-    pass
+  # if row[ItemizedInvoiceCols.CustNum] == "101":
+  #   pass
 
   context["model"] = model
 
@@ -556,17 +623,10 @@ def apply_addrinfo_and_initial_validation(
 
   context["input"].update(address_info)
 
-  context["skip_fields"].update(
-    {
-      model.lookup_field(ItemizedInvoiceCols.Quantity): lambda x: isinstance(x, Decimal),
-      model.lookup_field(ItemizedInvoiceCols.CustNum): None,
-    }
-  )
-
   # create a new instance of the model
   model = model.model_validate(context["input"], context=context)
 
-  if context["skip"]:
+  if any(context["remove_row"].values()):
     return row
 
   # serialize the model to a dict
@@ -716,6 +776,10 @@ def identify_bulk_rates(
   if group.empty:
     return group
 
+  # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
+  # if invoicenum in [162372, "162372"]:
+  #   pass
+
   storenum = group[ItemizedInvoiceCols.Store_Number].iloc[0]
   store_bulk_data = bulk_rate_data[storenum]
 
@@ -749,7 +813,7 @@ def identify_multipack(group: DataFrame):
     return group
 
   # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
-  # if invoicenum in [211392, "211392"]:
+  # if invoicenum in [230784, "230784"]:
   #   pass
 
   retail_multipack_rows = group.loc[group[ItemizedInvoiceCols.MixNMatchRate].notna()]
@@ -813,7 +877,7 @@ def identify_multipack(group: DataFrame):
 
     coupon_data.update(
       {
-        "price_per": multiunit_coupon_row[ItemizedInvoiceCols.PricePer],
+        "price_per": abs(multiunit_coupon_row[ItemizedInvoiceCols.PricePer]),
         "code": multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
       }
     )

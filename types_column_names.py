@@ -85,7 +85,7 @@ class RJRNamesFinal(ColNameEnum):
   coupon_desc = "coupondesc"
 
 
-class PMUSAScanHeaders(ColNameEnum):
+class AltriaScanHeaders(ColNameEnum):
   AcountNumber = auto()
   WeekEndDate = auto()
   TransactionDate = auto()
@@ -134,7 +134,77 @@ class PMUSAScanHeaders(ColNameEnum):
 
 
 class ITGScanHeaders(ColNameEnum):
-  pass
+  outlet_name = auto()
+  outlet_number = auto()
+  address_1 = auto()
+  address_2 = auto()
+  city = auto()
+  state = auto()
+  zip = auto()
+  transaction_date = auto()
+  market_basket_id = auto()
+  scan_id = auto()
+  register_id = auto()
+  quantity = auto()
+  price = auto()
+  upc_code = auto()
+  upc_description = auto()
+  unit_of_measure = auto()
+  promotion_flag = auto()
+  outlet_multipack_flag = auto()
+  outlet_multipack_quantity = auto()
+  outlet_multipack_discount_amt = auto()
+  acct_promo_name = auto()
+  acct_discount_amt = auto()
+  manufacturer_discount_amt = auto()
+  pid_coupon = auto()
+  pid_coupon_discount_amt = auto()
+  manufacturer_multipack_flag = auto()
+  manufacturer_multipack_quantity = auto()
+  manufacturer_multipack_discount_amt = auto()
+  manufacturer_promo_desc = auto()
+  manufacturer_buydown_desc = auto()
+  manufacturer_buydown_amt = auto()
+  manufacturer_multipack_desc = auto()
+  account_loyalty_id_number = auto()
+  coupon_desc = auto()
+
+
+class ITGNamesFinal(ColNameEnum):
+  outlet_name = "outletname"
+  outlet_number = "outletnumber"
+  address_1 = "address1"
+  address_2 = "address2"
+  city = "city"
+  state = "state"
+  zip = "zip"
+  transaction_date = "transactiondate"
+  market_basket_id = "marketbasketid"
+  scan_id = "scanid"
+  register_id = "registerid"
+  quantity = "quantity"
+  price = "price"
+  upc_code = "upccode"
+  upc_description = "upcdescription"
+  unit_of_measure = "unitofmeasure"
+  promotion_flag = "promotionflag"
+  outlet_multipack_flag = "outletmultipackflag"
+  outlet_multipack_quantity = "outletmultipackquantity"
+  outlet_multipack_discount_amt = "outletmultipackdiscountamt"
+  acct_promo_name = "acctpromoname"
+  acct_discount_amt = "acctdiscountamt"
+  manufacturer_discount_amt = "manufacturerdiscountamt"
+  pid_coupon = "pidcoupon"
+  pid_coupon_discount_amt = "pidcoupondiscountamt"
+  manufacturer_multipack_flag = "manufacturermultipackflag"
+  manufacturer_multipack_quantity = "manufacturermultipackquantity"
+  manufacturer_multipack_discount_amt = "manufacturermultipackdiscountamt"
+  manufacturer_promo_desc = "manufacturerpromodesc"
+  manufacturer_buydown_desc = "manufacturerbuydowndesc"
+  manufacturer_buydown_amt = "manufacturerbuydownamt"
+  manufacturer_multipack_desc = "manufacturermultipackdesc"
+  account_loyalty_id_number = "accountloyaltyidnumber"
+  coupon_desc = "coupondesc"
 
 
 class ItemizedInvoiceCols(ColNameEnum):

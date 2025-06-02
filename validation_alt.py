@@ -18,8 +18,15 @@ from pydantic import (
   computed_field,
   field_serializer,
 )
-from types_column_names import ItemizedInvoiceCols, PMUSAScanHeaders
-from types_custom import DeptIDsEnum, FTXDeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
+from types_column_names import AltriaScanHeaders, ItemizedInvoiceCols
+from types_custom import (
+  AltriaDeptsEnum,
+  DeptIDsEnum,
+  FTXDeptIDsEnum,
+  StatesEnum,
+  StoreNum,
+  UnitsOfMeasureEnum,
+)
 from utils import truncate_decimal
 from validation_config import CustomBaseModel
 from validators_shared import validate_unit_type
@@ -62,7 +69,7 @@ def map_age_validation_method(method: str) -> Optional[str]:
   return "Scanned ID" if method in {"1", 1} else None
 
 
-class PMUSAValidationModel(CustomBaseModel):
+class AltriaValidationModel(CustomBaseModel):
   TransactionID: Annotated[int, Field(alias="Invoice_Number")]
   StoreNumber: Annotated[StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"))]
   StoreName: Annotated[str, Field(alias="Store_Name")]
@@ -70,14 +77,10 @@ class PMUSAValidationModel(CustomBaseModel):
   StoreCity: Annotated[Optional[str], Field(alias="Store_City")]
   StoreState: Annotated[Optional[StatesEnum], Field(alias="Store_State")]
   StoreZip: Annotated[Optional[str], Field(alias="Store_Zip")]
-  Category: Annotated[DeptIDsEnum, Field(alias="Dept_ID")]
+  Category: Annotated[AltriaDeptsEnum, Field(alias="Dept_ID")]
   ManufacturerName: Annotated[Optional[str], Field(alias="ItemName_Extra")] = None
-  SKUCode: Annotated[
-    str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]{6,14}$")
-  ]
-  UPCCode: Annotated[
-    str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]{6,14}$")
-  ]
+  SKUCode: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]+$")]
+  UPCCode: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]+$")]
   ItemDescription: Annotated[str, Field(alias="ItemName")]
   UnitMeasure: Annotated[
     UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")
@@ -136,32 +139,32 @@ class PMUSAValidationModel(CustomBaseModel):
     Optional[time], Field(alias="TransactionTime", exclude=True)
   ] = None
 
-  field_name_lookup: ClassVar[dict[ItemizedInvoiceCols, PMUSAScanHeaders]] = {
-    ItemizedInvoiceCols.Invoice_Number: PMUSAScanHeaders.TransactionID,
-    ItemizedInvoiceCols.Store_Number: PMUSAScanHeaders.StoreNumber,
-    ItemizedInvoiceCols.Store_Name: PMUSAScanHeaders.StoreName,
-    ItemizedInvoiceCols.Store_Address: PMUSAScanHeaders.StoreAddress,
-    ItemizedInvoiceCols.Store_City: PMUSAScanHeaders.StoreCity,
-    ItemizedInvoiceCols.Store_State: PMUSAScanHeaders.StoreState,
-    ItemizedInvoiceCols.Store_Zip: PMUSAScanHeaders.StoreZip,
-    ItemizedInvoiceCols.Dept_ID: PMUSAScanHeaders.Category,
-    ItemizedInvoiceCols.ItemName_Extra: PMUSAScanHeaders.ManufacturerName,
-    ItemizedInvoiceCols.ItemNum: PMUSAScanHeaders.UPCCode,
-    ItemizedInvoiceCols.ItemName: PMUSAScanHeaders.ItemDescription,
-    ItemizedInvoiceCols.Unit_Type: PMUSAScanHeaders.UnitMeasure,
-    ItemizedInvoiceCols.Quantity: PMUSAScanHeaders.QtySold,
-    ItemizedInvoiceCols.Unit_Size: PMUSAScanHeaders.ConsumerUnits,
-    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity: PMUSAScanHeaders.TotalMultiUnitDiscountQty,
-    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt: PMUSAScanHeaders.TotalMultiUnitDiscountAmt,
-    ItemizedInvoiceCols.Acct_Promo_Name: PMUSAScanHeaders.RetailerFundedDiscountName,
-    ItemizedInvoiceCols.Acct_Discount_Amt: PMUSAScanHeaders.RetailerFundedDiscountAmt,
-    ItemizedInvoiceCols.loyalty_disc_desc: PMUSAScanHeaders.LoyaltyDiscountName,
-    ItemizedInvoiceCols.PID_Coupon_Discount_Amt: PMUSAScanHeaders.LoyaltyDiscountAmt,
-    ItemizedInvoiceCols.Store_Telephone: PMUSAScanHeaders.StoreTelephone,
-    ItemizedInvoiceCols.Store_ContactEmail: PMUSAScanHeaders.StoreContactEmail,
-    ItemizedInvoiceCols.CustNum: PMUSAScanHeaders.LoyaltyIDNumber,
-    ItemizedInvoiceCols.Phone_1: PMUSAScanHeaders.AdultTobConsumerPhoneNum,
-    ItemizedInvoiceCols.AgeVerificationMethod: PMUSAScanHeaders.AgeValidationMethod,
+  field_name_lookup: ClassVar[dict[ItemizedInvoiceCols, AltriaScanHeaders]] = {
+    ItemizedInvoiceCols.Invoice_Number: AltriaScanHeaders.TransactionID,
+    ItemizedInvoiceCols.Store_Number: AltriaScanHeaders.StoreNumber,
+    ItemizedInvoiceCols.Store_Name: AltriaScanHeaders.StoreName,
+    ItemizedInvoiceCols.Store_Address: AltriaScanHeaders.StoreAddress,
+    ItemizedInvoiceCols.Store_City: AltriaScanHeaders.StoreCity,
+    ItemizedInvoiceCols.Store_State: AltriaScanHeaders.StoreState,
+    ItemizedInvoiceCols.Store_Zip: AltriaScanHeaders.StoreZip,
+    ItemizedInvoiceCols.Dept_ID: AltriaScanHeaders.Category,
+    ItemizedInvoiceCols.ItemName_Extra: AltriaScanHeaders.ManufacturerName,
+    ItemizedInvoiceCols.ItemNum: AltriaScanHeaders.UPCCode,
+    ItemizedInvoiceCols.ItemName: AltriaScanHeaders.ItemDescription,
+    ItemizedInvoiceCols.Unit_Type: AltriaScanHeaders.UnitMeasure,
+    ItemizedInvoiceCols.Quantity: AltriaScanHeaders.QtySold,
+    ItemizedInvoiceCols.Unit_Size: AltriaScanHeaders.ConsumerUnits,
+    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity: AltriaScanHeaders.TotalMultiUnitDiscountQty,
+    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt: AltriaScanHeaders.TotalMultiUnitDiscountAmt,
+    ItemizedInvoiceCols.Acct_Promo_Name: AltriaScanHeaders.RetailerFundedDiscountName,
+    ItemizedInvoiceCols.Acct_Discount_Amt: AltriaScanHeaders.RetailerFundedDiscountAmt,
+    ItemizedInvoiceCols.loyalty_disc_desc: AltriaScanHeaders.LoyaltyDiscountName,
+    ItemizedInvoiceCols.PID_Coupon_Discount_Amt: AltriaScanHeaders.LoyaltyDiscountAmt,
+    ItemizedInvoiceCols.Store_Telephone: AltriaScanHeaders.StoreTelephone,
+    ItemizedInvoiceCols.Store_ContactEmail: AltriaScanHeaders.StoreContactEmail,
+    ItemizedInvoiceCols.CustNum: AltriaScanHeaders.LoyaltyIDNumber,
+    ItemizedInvoiceCols.Phone_1: AltriaScanHeaders.AdultTobConsumerPhoneNum,
+    ItemizedInvoiceCols.AgeVerificationMethod: AltriaScanHeaders.AgeValidationMethod,
   }
 
   # @field_validator("ConsumerUnits", mode="wrap")
@@ -234,7 +237,7 @@ class PMUSAValidationModel(CustomBaseModel):
     )
 
 
-class FTXPMUSAValidationModel(PMUSAValidationModel):
+class FTXPMUSAValidationModel(AltriaValidationModel):
   """FTX PMUSA Validation Model."""
 
   Category: Annotated[FTXDeptIDsEnum, Field(alias="Dept_ID")]

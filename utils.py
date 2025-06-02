@@ -154,18 +154,25 @@ def rjr_start_end_dates(additional_shift: int = 0) -> tuple[datetime, datetime]:
   return start_date, end_date
 
 
-def pm_start_end_dates(additional_shift: int = 0) -> tuple[datetime, datetime]:
+def alt_start_end_dates(additional_shift: int = 0) -> tuple[datetime, datetime]:
   end_date = get_last_sun(additional_shift)
+  start_date = end_date - relativedelta(weeks=1)
+  return start_date, end_date
+
+
+def itg_start_end_dates(additional_shift: int = 0) -> tuple[datetime, datetime]:
+  end_date = get_last_mon(additional_shift)
   start_date = end_date - relativedelta(weeks=1)
   return start_date, end_date
 
 
 def get_full_dates(week_shift: int = 0) -> tuple[datetime, datetime]:
   rjr = rjr_start_end_dates(week_shift)
-  pm = pm_start_end_dates(week_shift)
+  alt = alt_start_end_dates(week_shift)
+  itg = itg_start_end_dates(week_shift)
 
-  start_date = min(rjr[0], pm[0])
-  end_date = max(rjr[1], pm[1])
+  start_date = min(rjr[0], alt[0], itg[0])
+  end_date = max(rjr[1], alt[1], itg[1])
   return start_date, end_date
 
 
@@ -391,3 +398,10 @@ def upce_to_upca(upce: str):
   check_digit = 10 - check_digit
   check_digit = check_digit % 10
   return newmsg + str(check_digit)
+
+
+def is_not_integer(value: Any) -> bool:
+  with contextlib.suppress(TypeError):
+    if value % 1 == 0:
+      return False
+  return True

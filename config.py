@@ -13,6 +13,7 @@ class Settings(BaseSettings):
   )
   week_shift: Annotated[int, Field(alias="WEEK_SHIFT")] = 0
   testing_stores: Annotated[list[int], Field(alias="TESTING_STORES")] = []
+  test_file: Annotated[bool, Field(alias="TEST_FILE")] = False
 
 
 SETTINGS = Settings()

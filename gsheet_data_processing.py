@@ -8,7 +8,7 @@ from logging import getLogger
 from pathlib import Path
 from typing import Optional
 
-from dataframe_transformations import apply_model_to_df
+from dataframe_transformations import apply_model_to_df, context_setup
 from dataframe_utils import NULL_VALUES
 from gspread import service_account
 from gspread.http_client import BackOffHTTPClient
@@ -126,10 +126,42 @@ class SheetCache(metaclass=SingletonType):
     vap = vap.replace(NULL_VALUES, value=None)
     uom = uom.replace(NULL_VALUES, value=None)
 
-    info = info.apply(apply_model_to_df, model=StoreInfoModel, axis=1, result_type="broadcast")
-    bds = bds.apply(apply_model_to_df, model=BuydownsModel, axis=1, result_type="broadcast")
-    vap = vap.apply(apply_model_to_df, model=VAPDiscountsModel, axis=1, result_type="broadcast")
-    uom = uom.apply(apply_model_to_df, model=UnitsOfMeasureModel, axis=1, result_type="broadcast")
+    info = info.apply(
+      context_setup(
+        model=StoreInfoModel,
+        # xtra_rules={},
+        # errors=[],
+      )(apply_model_to_df),
+      axis=1,
+      result_type="broadcast",
+    )
+    bds = bds.apply(
+      context_setup(
+        model=BuydownsModel,
+        # xtra_rules={},
+        # errors=[],
+      )(apply_model_to_df),
+      axis=1,
+      result_type="broadcast",
+    )
+    vap = vap.apply(
+      context_setup(
+        model=VAPDiscountsModel,
+        # xtra_rules={},
+        # errors=[],
+      )(apply_model_to_df),
+      axis=1,
+      result_type="broadcast",
+    )
+    uom = uom.apply(
+      context_setup(
+        model=UnitsOfMeasureModel,
+        # xtra_rules={},
+        # errors=[],
+      )(apply_model_to_df),
+      axis=1,
+      result_type="broadcast",
+    )
 
     return info, bds, vap, uom
 

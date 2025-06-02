@@ -9,7 +9,7 @@ from enum import Enum, StrEnum, auto
 from logging import getLogger
 from typing import Any, Literal, NamedTuple, TypedDict
 
-from pandas import DataFrame
+from pandas import DataFrame, Series
 from pyodbc import Row
 from pypika.queries import QueryBuilder
 from validation_config import CustomBaseModel, ValidationErrPackage
@@ -260,12 +260,56 @@ class DeptIDsEnum(ColNameEnum):
   Zippo = auto()
 
   @classmethod
-  def rjr_depts(cls) -> set[str]:
+  def rjr_depts_set(cls) -> set[str]:
     return set(cls.__rjr_include__)
 
   @classmethod
-  def pm_depts(cls) -> set[str]:
+  def pm_depts_set(cls) -> set[str]:
     return set(cls.__pm_include__)
+
+
+class AltriaDeptsEnum(ColNameEnum):
+  __pm_include__ = [
+    "BDsBrand",
+    "BDsLine",
+    "BDsMisc",
+    "ChewHelx",
+    "ChewHusk",
+    "ChewUSST",
+    "Cigs",
+    "CigsMarl",
+    "Coupon$",
+    "FGIDisc",
+    "HelxCoup",
+    "PMCOUPON",
+    "PMPromos",
+    "PreNJOY",
+    "PromosLT",
+    "PromosST",
+    "T21JMC",
+    "USSTCoup",
+    "VAPBOGO",
+    "VAPBTGO",
+    "VAPFlat",
+  ]
+  ChewHelx = auto()
+  ChewHusk = auto()
+  ChewUSST = auto()
+  Cigs = auto()
+  CigsMarl = auto()
+  Coupon = "Coupon$"
+  FGIDisc = auto()
+  HelxCoup = auto()
+  PMCOUPON = auto()
+  PMPromos = auto()
+  PreNJOY = auto()
+  PromosLT = auto()
+  PromosST = auto()
+  T21JMC = auto()
+  USSTCoup = auto()
+  VAPBOGO = auto()
+  VAPBTGO = auto()
+  VAPFlat = auto()
 
 
 class FTXDeptIDsEnum(ColNameEnum):
@@ -355,14 +399,26 @@ class SQLCreds(TypedDict):
   PWD: SQLPWD
 
 
+type FieldName = str
+
+
 class ModelContextType(TypedDict):
-  row_err: dict[str, "ValidationErrPackage"]
-  skip_fields: dict[str, Callable[[Any], bool] | None]
   store_num: StoreNum
-  input: dict[str, Any]
   row_id: int
+  input: dict[str, Any]
   model: CustomBaseModel
-  skip: bool
+  row_err: dict[FieldName, ValidationErrPackage]
+  fields_to_not_report: set[FieldName]
+  fields_to_not_remove: set[FieldName]
+  special_dont_report_conditions: dict[FieldName, Callable[[Any], bool]]
+  special_dont_remove_conditions: dict[FieldName, Callable[[Any], bool]]
+  remove_row: dict[FieldName, bool]
+
+
+class RowErrPackage(NamedTuple):
+  field_name: FieldName
+  err_reason: str
+  row: Series
 
 
 class BulkDataPackage(NamedTuple):

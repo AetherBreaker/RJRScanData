@@ -54,8 +54,11 @@ class CustomBaseModel(BaseModel):
   ) -> Any:
     results = VALIDATION_FAILED_CHECK_CONSTANT
     context: "ModelContextType" = info.context
+    context["remove_row"][info.field_name] = True
+
     try:
       results = handler(data)
+      context["remove_row"][info.field_name] = False
     except Exception as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
 
@@ -63,18 +66,20 @@ class CustomBaseModel(BaseModel):
       if isinstance(e, ValidationError):
         context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
 
-        if not context["skip"]:
-          skip_fields = context.get("skip_fields", {})
+        if context["remove_row"]:
+          dont_remove_fields = context["fields_to_not_remove"]
 
-          skipcheck_func = skip_fields.get(info.field_name)
-          is_skip_field = info.field_name in skip_fields
+          dont_remove_check_func = context["special_dont_remove_conditions"].get(info.field_name)
+          is_dont_remove_field = info.field_name in dont_remove_fields
 
-          do_skip = is_skip_field and skipcheck_func(data) if skipcheck_func else is_skip_field
+          dont_remove = (
+            is_dont_remove_field or dont_remove_check_func(data)
+            if dont_remove_check_func
+            else False
+          )
 
-          if do_skip:
-            context["skip"] = True
-          else:
-            pass
+          if dont_remove:
+            context["remove_row"][info.field_name] = False
       else:
         logger.error(
           f"Error validating {info.field_name} in {cls.__name__}: {e}",

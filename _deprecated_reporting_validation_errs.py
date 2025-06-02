@@ -90,11 +90,11 @@ class LoadReportingFiles:
           temp_row.append(none_val)
         data.loc["TEMP_ROW"] = temp_row
 
-        for key, val in type_key.items():
-          if val == datetime:
+        for key, type_desig in type_key.items():
+          if type_desig == datetime:
             data[enum_type(key)] = to_datetime(data[enum_type(key)])
           else:
-            data[enum_type(key)] = data[enum_type(key)].astype(val)
+            data[enum_type(key)] = data[enum_type(key)].astype(type_desig)
 
         reporting_files[report_key] = (RLock(), data)
 
