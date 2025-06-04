@@ -5,6 +5,7 @@ if __name__ == "__main__":
 
 from datetime import date, datetime, time
 from decimal import Decimal
+from functools import partial
 from logging import getLogger
 from typing import Annotated, ClassVar, Optional
 
@@ -15,21 +16,27 @@ from pydantic import (
   BeforeValidator,
   Field,
   FieldSerializationInfo,
+  SkipValidation,
   computed_field,
   field_serializer,
 )
 from types_column_names import AltriaScanHeaders, ItemizedInvoiceCols
 from types_custom import (
   AltriaDeptsEnum,
-  DeptIDsEnum,
   FTXDeptIDsEnum,
+  ReportingFieldInfo,
   StatesEnum,
   StoreNum,
   UnitsOfMeasureEnum,
 )
-from utils import truncate_decimal
+from utils import is_not_integer, truncate_decimal
 from validation_config import CustomBaseModel
-from validators_shared import validate_unit_type
+from validators_shared import (
+  pad_to_length,
+  validate_ean,
+  validate_unit_type,
+  validate_upc_checkdigit,
+)
 
 logger = getLogger(__name__)
 
@@ -79,22 +86,35 @@ class AltriaValidationModel(CustomBaseModel):
   StoreZip: Annotated[Optional[str], Field(alias="Store_Zip")]
   Category: Annotated[AltriaDeptsEnum, Field(alias="Dept_ID")]
   ManufacturerName: Annotated[Optional[str], Field(alias="ItemName_Extra")] = None
-  SKUCode: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]+$")]
-  UPCCode: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]+$")]
-  ItemDescription: Annotated[str, Field(alias="ItemName")]
-  UnitMeasure: Annotated[
-    UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")
+  SKUCode: Annotated[SkipValidation[str], Field(alias="ItemNum")]
+  # UPCCode: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]+$")]
+  UPCCode: Annotated[
+    Annotated[
+      Annotated[str, BeforeValidator(partial(pad_to_length, length=12))]  # UPC-A must be exactly 12 characters
+      | Annotated[str, BeforeValidator(partial(pad_to_length, length=8))],
+      AfterValidator(validate_upc_checkdigit),
+    ]  # UPC-E must be exactly 8 characters
+    | Annotated[
+      str,
+      BeforeValidator(partial(pad_to_length, length=13)),
+      AfterValidator(validate_ean),
+    ],  # EAN must be exactly 13 characters
+    # BeforeValidator(upc_isdigit),
+    # AfterValidator(check_num_sys_digit),
+    # AfterValidator(validate_upc_checkdigit),
+    Field(alias="ItemNum", pattern=r"^[0-9]+$"),
+    ReportingFieldInfo(report_field=False),
   ]
-  QtySold: Annotated[int, Field(alias="Quantity", le=100)]
-  ConsumerUnits: Annotated[
-    int, BeforeValidator(default_consumerunits), Field(alias="Unit_Size", gt=0)
-  ] = 1
-  TotalMultiUnitDiscountQty: Annotated[
-    Optional[int], Field(alias="Altria_Manufacturer_Multipack_Quantity")
-  ] = None
-  TotalMultiUnitDiscountAmt: Annotated[
-    Optional[Decimal], Field(alias="Altria_Manufacturer_Multipack_Discount_Amt")
-  ] = None
+  ItemDescription: Annotated[str, Field(alias="ItemName")]
+  UnitMeasure: Annotated[UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")]
+  QtySold: Annotated[
+    int,
+    Field(alias="Quantity", le=100),
+    ReportingFieldInfo(dont_report_if=is_not_integer, dont_remove_if=is_not_integer),
+  ]
+  ConsumerUnits: Annotated[int, BeforeValidator(default_consumerunits), Field(alias="Unit_Size", gt=0)] = 1
+  TotalMultiUnitDiscountQty: Annotated[Optional[int], Field(alias="Altria_Manufacturer_Multipack_Quantity")] = None
+  TotalMultiUnitDiscountAmt: Annotated[Optional[Decimal], Field(alias="Altria_Manufacturer_Multipack_Discount_Amt")] = None
   RetailerFundedDiscountName: Annotated[Optional[str], Field(alias="Acct_Promo_Name")] = None
   RetailerFundedDiscountAmt: Annotated[Optional[Decimal], Field(alias="Acct_Discount_Amt")] = None
   CouponDiscountName: Optional[str] = None
@@ -110,15 +130,13 @@ class AltriaValidationModel(CustomBaseModel):
   StoreContactEmail: Annotated[Optional[str], Field(alias="Store_ContactEmail")]
   ProductGroupingCode: Optional[str] = None
   ProductGroupingName: Optional[str] = None
-  LoyaltyIDNumber: Annotated[Optional[str], Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum")] = (
-    None
-  )
-  AdultTobConsumerPhoneNum: Annotated[
-    Optional[str], BeforeValidator(truncate_phonenum), Field(alias="Phone_1")
+  LoyaltyIDNumber: Annotated[
+    Optional[str],
+    Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum"),
+    ReportingFieldInfo(report_field=False),
   ] = None
-  AgeValidationMethod: Annotated[
-    Optional[str], AfterValidator(map_age_validation_method), Field(alias="AgeVerificationMethod")
-  ]
+  AdultTobConsumerPhoneNum: Annotated[Optional[str], BeforeValidator(truncate_phonenum), Field(alias="Phone_1")] = None
+  AgeValidationMethod: Annotated[Optional[str], AfterValidator(map_age_validation_method), Field(alias="AgeVerificationMethod")]
   ManufacturerOfferName: Optional[str] = None
   ManufacturerOfferAmt: Optional[str] = None
   PurchaseType: Optional[str] = None
@@ -132,12 +150,10 @@ class AltriaValidationModel(CustomBaseModel):
     AfterValidator(abs),
     Field(alias=AliasChoices("PricePer", "FinalSalesPrice"), exclude=True),
   ]
-  special_TransactionDate: Annotated[
-    Optional[date], BeforeValidator(fix_date), Field(alias="TransactionDate", exclude=True)
-  ] = None
-  special_TransactionTime: Annotated[
-    Optional[time], Field(alias="TransactionTime", exclude=True)
-  ] = None
+  special_TransactionDate: Annotated[Optional[date], BeforeValidator(fix_date), Field(alias="TransactionDate", exclude=True)] = (
+    None
+  )
+  special_TransactionTime: Annotated[Optional[time], Field(alias="TransactionTime", exclude=True)] = None
 
   field_name_lookup: ClassVar[dict[ItemizedInvoiceCols, AltriaScanHeaders]] = {
     ItemizedInvoiceCols.Invoice_Number: AltriaScanHeaders.TransactionID,
@@ -166,6 +182,7 @@ class AltriaValidationModel(CustomBaseModel):
     ItemizedInvoiceCols.Phone_1: AltriaScanHeaders.AdultTobConsumerPhoneNum,
     ItemizedInvoiceCols.AgeVerificationMethod: AltriaScanHeaders.AgeValidationMethod,
   }
+  remove_bad_rows: ClassVar[bool] = True
 
   # @field_validator("ConsumerUnits", mode="wrap")
   # @classmethod
@@ -190,9 +207,7 @@ class AltriaValidationModel(CustomBaseModel):
       return self.special_TransactionDate
 
   @field_serializer("TransactionDate")
-  def serialize_transaction_date(
-    self, TransactionDate: date, info: FieldSerializationInfo
-  ) -> Optional[str]:
+  def serialize_transaction_date(self, TransactionDate: date, info: FieldSerializationInfo) -> Optional[str]:
     return TransactionDate.strftime("%Y%m%d") if TransactionDate else None
 
   @computed_field
@@ -220,21 +235,13 @@ class AltriaValidationModel(CustomBaseModel):
     return self.TransactionDate + relativedelta(weekday=SA(1))
 
   @field_serializer("WeekEndDate")
-  def serialize_week_end_date(
-    self, WeekEndDate: date, info: FieldSerializationInfo
-  ) -> Optional[str]:
+  def serialize_week_end_date(self, WeekEndDate: date, info: FieldSerializationInfo) -> Optional[str]:
     return WeekEndDate.strftime("%Y%m%d") if WeekEndDate else None
 
   @computed_field
   @property
   def MultiUnitIndicator(self) -> str:
-    return (
-      "Y"
-      if any(
-        (self.TotalMultiUnitDiscountQty is not None, self.TotalMultiUnitDiscountAmt is not None)
-      )
-      else "N"
-    )
+    return "Y" if any((self.TotalMultiUnitDiscountQty is not None, self.TotalMultiUnitDiscountAmt is not None)) else "N"
 
 
 class FTXPMUSAValidationModel(AltriaValidationModel):

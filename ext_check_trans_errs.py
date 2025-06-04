@@ -4,7 +4,6 @@ from config import SETTINGS
 from exec_initial_validation import validate_and_concat_itemized
 from logging_config import RICH_CONSOLE, configure_logging
 from pandas import DataFrame, concat
-from reporting_validation_errs import LoadReportingFiles
 from rich_custom import LiveCustom
 from sql_query_builders import (
   build_employee_info_query,
@@ -161,112 +160,111 @@ with LiveCustom(
 ) as live:
   pbar = live.pbar
 
-  with LoadReportingFiles():
-    remaining_callable = live.init_remaining((items, "Itemized Invoices"))
-    item_lines = validate_and_concat_itemized(
-      pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty
-    )
+  remaining_callable = live.init_remaining((items, "Itemized Invoices"))
+  item_lines = validate_and_concat_itemized(
+    pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty
+  )
 
-    item_lines.sort_values(
-      by=[
-        ItemizedInvoiceCols.Store_Number,
-        ItemizedInvoiceCols.DateTime,
-      ],
-      inplace=True,
-    )
+  item_lines.sort_values(
+    by=[
+      ItemizedInvoiceCols.Store_Number,
+      ItemizedInvoiceCols.DateTime,
+    ],
+    inplace=True,
+  )
 
-    item_lines.to_csv("item_lines.csv", index=False)
+  item_lines.to_csv("item_lines.csv", index=False)
 
-    ocurrences = []
+  ocurrences = []
 
-    groups = item_lines.groupby(
-      by=[ItemizedInvoiceCols.Invoice_Number, ItemizedInvoiceCols.Store_Name],
-      as_index=False,
-      group_keys=False,
-    )
+  groups = item_lines.groupby(
+    by=[ItemizedInvoiceCols.Invoice_Number, ItemizedInvoiceCols.Store_Name],
+    as_index=False,
+    group_keys=False,
+  )
 
-    loyalty_coupon_itemnums = {
-      "PMUSALoyalty",
-      "PMUSALoyalty1",
-      "USSTCLoyaltyIA",
-      "USSTCLoyaltyMI",
-      "USSTCLoyaltyOH",
-      "USSTCLoyaltyWI",
-      "HelixLoyaltyIA",
-      "HelixLoyaltyMI",
-      "HelixLoyaltyOH",
-      "HelixLoyaltyWI",
-    }
+  loyalty_coupon_itemnums = {
+    "PMUSALoyalty",
+    "PMUSALoyalty1",
+    "USSTCLoyaltyIA",
+    "USSTCLoyaltyMI",
+    "USSTCLoyaltyOH",
+    "USSTCLoyaltyWI",
+    "HelixLoyaltyIA",
+    "HelixLoyaltyMI",
+    "HelixLoyaltyOH",
+    "HelixLoyaltyWI",
+  }
 
-    items = {storenum: str(storenum) for storenum in DEFAULT_STORES_LIST}
+  items = {storenum: str(storenum) for storenum in DEFAULT_STORES_LIST}
 
-    occurred_groups = []
+  occurred_groups = []
 
-    def find_dupes(group: DataFrame) -> DataFrame:
-      counts = group[ItemizedInvoiceCols.ItemNum].value_counts()
+  def find_dupes(group: DataFrame) -> DataFrame:
+    counts = group[ItemizedInvoiceCols.ItemNum].value_counts()
 
-      for coupon in loyalty_coupon_itemnums:
-        if coupon in counts.index:
-          count = counts[coupon]
-          if count > 1:
-            ocurrences.append((group[ItemizedInvoiceCols.Invoice_Number].iloc[0]))
-            occurred_groups.append(group)
+    for coupon in loyalty_coupon_itemnums:
+      if coupon in counts.index:
+        count = counts[coupon]
+        if count > 1:
+          ocurrences.append((group[ItemizedInvoiceCols.Invoice_Number].iloc[0]))
+          occurred_groups.append(group)
 
-      return group
+    return group
 
-    applied: DataFrame = groups.apply(
-      taskgen_whencalled(
-        progress=pbar,
-        description="Finding Loyalty Errors",
-        total=len(groups),
-      )(find_dupes)()
-    )
+  applied: DataFrame = groups.apply(
+    taskgen_whencalled(
+      progress=pbar,
+      description="Finding Loyalty Errors",
+      total=len(groups),
+    )(find_dupes)()
+  )
 
-    bad_invoices = concat(occurred_groups, ignore_index=True, axis=0)
+  bad_invoices = concat(occurred_groups, ignore_index=True, axis=0)
 
-    # replace Cashier_ID with EmpName
-    bad_invoices = bad_invoices.merge(
-      employee_info,
-      how="left",
-      left_on=["Cashier_ID", "Store_Number"],
-      right_on=["Cashier_ID", "Store_Number"],
-    )
+  # replace Cashier_ID with EmpName
+  bad_invoices = bad_invoices.merge(
+    employee_info,
+    how="left",
+    left_on=["Cashier_ID", "Store_Number"],
+    right_on=["Cashier_ID", "Store_Number"],
+  )
 
-    bad_invoices = bad_invoices[
-      [
-        "Store_Name",
-        "Invoice_Number",
-        "CustNum",
-        "LineNum",
-        "DateTime",
-        "EmpName",
-        "ItemNum",
-        "ItemName",
-        "ItemName_Extra",
-        "DiffItemName",
-        "Dept_ID",
-        "Quantity",
-        "CostPer",
-        "PricePer",
-        "Tax1Per",
-        "Store_Address",
-        "Store_Address2",
-        "Store_City",
-        "Store_State",
-        "Store_Zip",
-      ]
+  bad_invoices = bad_invoices[
+    [
+      "Store_Name",
+      "Invoice_Number",
+      "CustNum",
+      "LineNum",
+      "DateTime",
+      "EmpName",
+      "ItemNum",
+      "ItemName",
+      "ItemName_Extra",
+      "DiffItemName",
+      "Dept_ID",
+      "Quantity",
+      "CostPer",
+      "PricePer",
+      "Tax1Per",
+      "Store_Address",
+      "Store_Address2",
+      "Store_City",
+      "Store_State",
+      "Store_Zip",
     ]
+  ]
 
-    bad_invoices.sort_values(
-      by=[
-        "Store_Name",
-        "Invoice_Number",
-        "LineNum",
-        "DateTime",
-      ],
-      inplace=True,
-    )
+  bad_invoices.sort_values(
+    by=[
+      "Store_Name",
+      "Invoice_Number",
+      "LineNum",
+      "DateTime",
+    ],
+    inplace=True,
+  )
 
-    print(len(ocurrences))
+  print(len(ocurrences))
 
-    bad_invoices.to_csv(f"errored_loyalty_lines_{full_period_end:%Y%m%d}.csv", index=False)
+  bad_invoices.to_csv(f"errored_loyalty_lines_{full_period_end:%Y%m%d}.csv", index=False)

@@ -34,6 +34,7 @@ class ValidationErrPackage(NamedTuple):
 
 class CustomBaseModel(BaseModel):
   field_name_lookup: ClassVar[dict["ItemizedInvoiceCols", type["ColNameEnum"]]] = {}  # noqa: F821
+  remove_bad_rows: ClassVar[bool] = False
   model_config = ConfigDict(
     populate_by_name=True,
     use_enum_values=True,
@@ -49,18 +50,21 @@ class CustomBaseModel(BaseModel):
 
   @field_validator("*", mode="wrap", check_fields=False)
   @classmethod
-  def log_failed_field_validations(
-    cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
-  ) -> Any:
+  def log_failed_field_validations(cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo) -> Any:
     results = VALIDATION_FAILED_CHECK_CONSTANT
     context: "ModelContextType" = info.context
-    context["remove_row"][info.field_name] = True
+    context["remove_row"][info.field_name] = cls.remove_bad_rows
 
     try:
       results = handler(data)
       context["remove_row"][info.field_name] = False
     except Exception as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
+
+      test = cls.__annotations__.get(info.field_name, None).__metadata__
+
+      if info.field_name == "":
+        pass
 
       # if the exception is a ValidationError...
       if isinstance(e, ValidationError):
@@ -72,11 +76,7 @@ class CustomBaseModel(BaseModel):
           dont_remove_check_func = context["special_dont_remove_conditions"].get(info.field_name)
           is_dont_remove_field = info.field_name in dont_remove_fields
 
-          dont_remove = (
-            is_dont_remove_field or dont_remove_check_func(data)
-            if dont_remove_check_func
-            else False
-          )
+          dont_remove = is_dont_remove_field or dont_remove_check_func(data) if dont_remove_check_func else False
 
           if dont_remove:
             context["remove_row"][info.field_name] = False
@@ -91,19 +91,35 @@ class CustomBaseModel(BaseModel):
 
   @model_validator(mode="wrap")
   @classmethod
-  def log_failed_validation(
-    cls, data: Any, handler: ModelWrapValidatorHandler[Self], info: ValidationInfo
-  ) -> Self:
+  def log_failed_validation(cls, data: Any, handler: ModelWrapValidatorHandler[Self], info: ValidationInfo) -> Self:
+    results = VALIDATION_FAILED_CHECK_CONSTANT
+    context: "ModelContextType" = info.context
+    context["remove_row"][info.field_name] = True
+
     try:
-      return handler(data)
+      results = handler(data)
+      context["remove_row"][info.field_name] = False
     except ValidationError as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
 
-      pass
+      if isinstance(e, ValidationError):
+        context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
 
-      logger.error(
-        f"Error validating {cls.__name__}: {e}",
-        exc_info=(exc_type, exc_val, exc_tb),
-        stack_info=True,
-      )
-      raise
+        if context["remove_row"]:
+          dont_remove_fields = context["fields_to_not_remove"]
+
+          dont_remove_check_func = context["special_dont_remove_conditions"].get(info.field_name)
+          is_dont_remove_field = info.field_name in dont_remove_fields
+
+          dont_remove = is_dont_remove_field or dont_remove_check_func(data) if dont_remove_check_func else False
+
+          if dont_remove:
+            context["remove_row"][info.field_name] = False
+      else:
+        logger.error(
+          f"Error validating {cls.__name__}: {e}",
+          exc_info=(exc_type, exc_val, exc_tb),
+          stack_info=True,
+        )
+
+    return data if results is VALIDATION_FAILED_CHECK_CONSTANT else results

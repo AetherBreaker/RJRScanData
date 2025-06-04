@@ -1,10 +1,17 @@
+if __name__ == "__main__":
+  from logging_config import configure_logging
+
+  configure_logging()
+
 from datetime import datetime, timedelta
 from io import StringIO
+from logging import getLogger
 
 from config import SETTINGS
 from dataframe_transformations import apply_model_to_df_transforming, context_setup
 from dataframe_utils import fillnas
 from pandas import DataFrame, concat, read_csv
+from reporting_validation_errs import assemble_validation_error_report
 from rich.progress import Progress
 from types_column_names import (
   AltriaScanHeaders,
@@ -23,9 +30,12 @@ from utils import (
   taskgen_whencalled,
   truncate_decimal,
 )
-from validation_alt import AltriaValidationModel
-from validation_itg import ITGValidationModel
-from validation_rjr import RJRValidationModel
+from validation_final_alt import AltriaValidationModel
+from validation_final_itg import ITGValidationModel
+from validation_final_rjr import RJRValidationModel
+
+logger = getLogger(__name__)
+
 
 RJR_SCAN_FILENAME_FORMAT = "B56192_{datetime:%Y%m%d_%H%S}_SWEETFIRETOBACCO.txt"
 ALT_SCAN_FILENAME_FORMAT = "SweetFireTobacco{date:%Y%m%d}.txt"
@@ -44,18 +54,17 @@ shifted_itg_end_date = itg_scan_end_date - timedelta(days=1)
 
 
 RJR_OUTPUT_FOLDER = CWD / "Output RJR Scan Data"
-rjr_result_folder = RJR_OUTPUT_FOLDER / "New" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
-rjr_sub_folder = RJR_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
-rjr_result_folder.mkdir(exist_ok=True, parents=True)
-rjr_sub_folder.mkdir(exist_ok=True, parents=True)
-
 ALT_OUTPUT_FOLDER = CWD / "Output Altria Scan Data"
-alt_sub_folder = ALT_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_alt_end_date:%m-%d-%y}"
-alt_sub_folder.mkdir(exist_ok=True, parents=True)
-
-
 ITG_OUTPUT_FOLDER = CWD / "Output ITG Scan Data"
+
+rjr_res_folder = RJR_OUTPUT_FOLDER / "New" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
+rjr_sub_folder = RJR_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
+alt_sub_folder = ALT_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_alt_end_date:%m-%d-%y}"
 itg_sub_folder = ITG_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_itg_end_date:%m-%d-%y}"
+
+rjr_res_folder.mkdir(exist_ok=True, parents=True)
+rjr_sub_folder.mkdir(exist_ok=True, parents=True)
+alt_sub_folder.mkdir(exist_ok=True, parents=True)
 itg_sub_folder.mkdir(exist_ok=True, parents=True)
 
 
@@ -65,6 +74,40 @@ FTX_SCANDATA_INPUT_FOLDER.mkdir(exist_ok=True)
 FTX_RJR_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_rjr_{shifted_rjr_end_date:%Y%m%d}.dat"
 FTX_ALT_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_alt_{shifted_alt_end_date:%Y%m%d}.txt"
 FTX_ITG_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_itg_{shifted_itg_end_date:%Y%m%d}.txt"
+
+
+ALT_ERR_OUTPUT_FLDR = ALT_OUTPUT_FOLDER / "Validation Errors Output"
+RJR_ERR_OUTPUT_FLDR = RJR_OUTPUT_FOLDER / "Validation Errors Output"
+ITG_ERR_OUTPUT_FLDR = ITG_OUTPUT_FOLDER / "Validation Errors Output"
+
+ALT_ERR_OUTPUT_FLDR.mkdir(exist_ok=True, parents=True)
+RJR_ERR_OUTPUT_FLDR.mkdir(exist_ok=True, parents=True)
+ITG_ERR_OUTPUT_FLDR.mkdir(exist_ok=True, parents=True)
+
+ALT_ERR_OUTPUT_FILE = ALT_ERR_OUTPUT_FLDR / f"ALTScanErrors_{shifted_alt_end_date:%Y%m%d}.csv"
+RJR_ERR_OUTPUT_FILE = RJR_ERR_OUTPUT_FLDR / f"RJRScanErrors_{shifted_rjr_end_date:%Y%m%d}.csv"
+ITG_ERR_OUTPUT_FILE = ITG_ERR_OUTPUT_FLDR / f"ITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
+
+
+RJR_RULES: ModelContextType = {
+  # "fields_to_not_report": {
+  #   ItemizedInvoiceCols.CustNum,
+  #   ItemizedInvoiceCols.ItemNum,
+  # }
+}
+ALTRIA_RULES: ModelContextType = {
+  "fields_to_not_report": {
+    ItemizedInvoiceCols.CustNum,
+    # ItemizedInvoiceCols.ItemNum,
+    # AltriaScanHeaders.SKUCode,
+  }
+}
+ITG_RULES: ModelContextType = {
+  "fields_to_not_report": {
+    ItemizedInvoiceCols.CustNum,
+    ItemizedInvoiceCols.ItemNum,
+  }
+}
 
 
 def apply_rjr_validation(
@@ -81,12 +124,6 @@ def apply_rjr_validation(
   new_rows = []
 
   rjr_errors = []
-  rjr_rules: ModelContextType = {
-    "fields_to_not_report": {
-      ItemizedInvoiceCols.CustNum,
-      ItemizedInvoiceCols.ItemNum,
-    }
-  }
 
   input_data.apply(
     taskgen_whencalled(
@@ -96,13 +133,15 @@ def apply_rjr_validation(
     )(
       context_setup(
         model=RJRValidationModel,
-        xtra_rules=rjr_rules,
+        xtra_rules=RJR_RULES,
         errors=rjr_errors,
       )(apply_model_to_df_transforming)
     )(),
     axis=1,
     new_rows=new_rows,
   )
+
+  assemble_validation_error_report(pbar, rjr_errors, RJR_ERR_OUTPUT_FILE)
 
   rjr_scan = concat(new_rows, axis=1).T
 
@@ -143,16 +182,13 @@ def apply_rjr_validation(
   rjr_scan = concat([rjr_df, ftx_df], ignore_index=True)
 
   rjr_scan.rename(
-    columns={
-      old_col: new_col
-      for old_col, new_col in zip(RJRScanHeaders.all_columns(), RJRNamesFinal.all_columns())
-    },
+    columns={old_col: new_col for old_col, new_col in zip(RJRScanHeaders.all_columns(), RJRNamesFinal.all_columns())},
     inplace=True,
   )
 
   now = datetime.now()
   rjr_scan.to_csv(
-    (rjr_result_folder / RJR_SCAN_FILENAME_FORMAT.format(datetime=now)),
+    (rjr_res_folder / RJR_SCAN_FILENAME_FORMAT.format(datetime=now)),
     sep="|",
     index=False,
   )
@@ -172,14 +208,6 @@ def apply_altria_validation(
   new_rows = []
   altria_errors = []
 
-  altria_rules: ModelContextType = {
-    "fields_to_not_report": {
-      ItemizedInvoiceCols.CustNum,
-      ItemizedInvoiceCols.ItemNum,
-      AltriaScanHeaders.SKUCode,
-    }
-  }
-
   input_data.apply(
     taskgen_whencalled(
       pbar,
@@ -188,13 +216,15 @@ def apply_altria_validation(
     )(
       context_setup(
         model=AltriaValidationModel,
-        xtra_rules=altria_rules,
+        xtra_rules=ALTRIA_RULES,
         errors=altria_errors,
       )(apply_model_to_df_transforming)
     )(),
     axis=1,
     new_rows=new_rows,
   )
+
+  assemble_validation_error_report(pbar, altria_errors, ALT_ERR_OUTPUT_FILE)
 
   altria_scan = concat(new_rows, axis=1).T
 
@@ -229,9 +259,7 @@ def apply_altria_validation(
   # ftx_df = concat(ftx_rows, axis=1).T
 
   ftx_input[AltriaScanHeaders.QtySold] = ftx_input[AltriaScanHeaders.QtySold].astype(int)
-  ftx_input[AltriaScanHeaders.FinalSalesPrice] = ftx_input[AltriaScanHeaders.FinalSalesPrice].map(
-    decimal_converter
-  )
+  ftx_input[AltriaScanHeaders.FinalSalesPrice] = ftx_input[AltriaScanHeaders.FinalSalesPrice].map(decimal_converter)
 
   altria_scan_new = concat([altria_scan, ftx_input], ignore_index=True)
 
@@ -250,9 +278,7 @@ def apply_altria_validation(
 
   altria_scan_new.to_csv(stream, sep="|", index=False, header=False)
 
-  with (ALT_OUTPUT_FOLDER / ALT_SCAN_FILENAME_FORMAT.format(date=shifted_alt_end_date)).open(
-    "w"
-  ) as f:
+  with (ALT_OUTPUT_FOLDER / ALT_SCAN_FILENAME_FORMAT.format(date=shifted_alt_end_date)).open("w") as f:
     f.write(stream.getvalue())
 
 
@@ -269,12 +295,6 @@ def apply_itg_validation(
 
   new_rows = []
   itg_errors = []
-  itg_rules: ModelContextType = {
-    "fields_to_not_report": {
-      ItemizedInvoiceCols.CustNum,
-      ItemizedInvoiceCols.ItemNum,
-    }
-  }
 
   input_data.apply(
     taskgen_whencalled(
@@ -284,13 +304,15 @@ def apply_itg_validation(
     )(
       context_setup(
         model=ITGValidationModel,
-        xtra_rules=itg_rules,
+        xtra_rules=ITG_RULES,
         errors=itg_errors,
       )(apply_model_to_df_transforming)
     )(),
     axis=1,
     new_rows=new_rows,
   )
+
+  assemble_validation_error_report(pbar, itg_errors, ITG_ERR_OUTPUT_FILE)
 
   itg_scan = concat(new_rows, axis=1).T
 

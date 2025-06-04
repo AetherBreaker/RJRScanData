@@ -10,6 +10,7 @@ from logging import getLogger
 from typing import Any, Literal, NamedTuple, TypedDict
 
 from pandas import DataFrame, Series
+from pydantic import ValidationError
 from pyodbc import Row
 from pypika.queries import QueryBuilder
 from validation_config import CustomBaseModel, ValidationErrPackage
@@ -61,6 +62,22 @@ class ColNameEnum(StrEnum):
       str(column)
       for column in cls
       if str(column) not in cls.__exclude__ and not str(column).startswith("_")
+    ]
+
+  @classmethod
+  def err_reporting_columns(cls) -> list[str]:
+    """
+    Return all columns that are not excluded and do not start with an underscore.
+    This is used for error reporting.
+    """
+    return [
+      "err_field_name",
+      "err_reason",
+      *[
+        str(column)
+        for column in cls
+        if str(column) not in cls.__exclude__ and not str(column).startswith("_")
+      ],
     ]
 
   @classmethod
@@ -366,6 +383,10 @@ class FTXDeptIDsEnum(ColNameEnum):
   VaporDevices = "Vapor Devices"
 
 
+
+
+
+
 type StoreNum = int
 
 type SQLPWD = str
@@ -402,6 +423,12 @@ class SQLCreds(TypedDict):
 type FieldName = str
 
 
+class ReportingFieldInfo(TypedDict):
+  report_field: bool = True
+  remove_row_if_error: bool = True
+  dont_report_if: Callable[[Any], bool] | None = None
+  dont_remove_if: Callable[[Any], bool] | None = None
+
 class ModelContextType(TypedDict):
   store_num: StoreNum
   row_id: int
@@ -417,7 +444,7 @@ class ModelContextType(TypedDict):
 
 class RowErrPackage(NamedTuple):
   field_name: FieldName
-  err_reason: str
+  err_reason: ValidationError
   row: Series
 
 

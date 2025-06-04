@@ -294,6 +294,14 @@ COUPON_IDENTIFIER_CODES = {
   "HelixLoyaltyMI": "840090050004",
   "HelixLoyaltyOH": "840090050004",
   "HelixLoyaltyWI": "840090050004",
+  "USSTCMultipackMI": "USSTC Multican",
+  "USSTCMultiCanIA": "USSTC Multican",
+  "USSTCMultiCanOH": "USSTC Multican",
+  "USSTCMultiCanWI": "USSTC Multican",
+  "HelixMultiCanIA": "840095781008",
+  "HelixMultiCanMI": "840095781008",
+  "HelixMultiCanOH": "840095781008",
+  "HelixMultiCanWI": "840095781008",
 }
 
 
@@ -313,6 +321,7 @@ scan_depts = rjr_depts.union(pm_depts)
 base_context: ModelContextType = {
   "fields_to_not_remove": set(),
   "fields_to_not_report": {"Dept_ID"},
+  # "fields_to_not_report": set(),
   "special_dont_report_conditions": {"Quantity": is_not_integer},
   "special_dont_remove_conditions": {"Quantity": is_not_integer},
   "remove_row": ...,
@@ -334,31 +343,19 @@ def context_setup[CTXFuncT: Callable[CTXFuncP, CTXFuncR]](
   context = deepcopy(base_context)
 
   context["fields_to_not_remove"] = {
-    model.lookup_field(field)
-    for field in context["fields_to_not_remove"].union(
-      xtra_rules.pop("fields_to_not_remove", set())
-    )
+    model.lookup_field(field) for field in context["fields_to_not_remove"].union(xtra_rules.pop("fields_to_not_remove", set()))
   }
   context["fields_to_not_report"] = {
-    model.lookup_field(field)
-    for field in context["fields_to_not_report"].union(
-      xtra_rules.pop("fields_to_not_report", set())
-    )
+    model.lookup_field(field) for field in context["fields_to_not_report"].union(xtra_rules.pop("fields_to_not_report", set()))
   }
-  context["special_dont_report_conditions"].update(
-    xtra_rules.pop("special_dont_report_conditions", {})
-  )
-  context["special_dont_remove_conditions"].update(
-    xtra_rules.pop("special_dont_remove_conditions", {})
-  )
+  context["special_dont_report_conditions"].update(xtra_rules.pop("special_dont_report_conditions", {}))
+  context["special_dont_remove_conditions"].update(xtra_rules.pop("special_dont_remove_conditions", {}))
 
   context["special_dont_report_conditions"] = {
-    model.lookup_field(field): func
-    for field, func in context["special_dont_report_conditions"].items()
+    model.lookup_field(field): func for field, func in context["special_dont_report_conditions"].items()
   }
   context["special_dont_remove_conditions"] = {
-    model.lookup_field(field): func
-    for field, func in context["special_dont_remove_conditions"].items()
+    model.lookup_field(field): func for field, func in context["special_dont_remove_conditions"].items()
   }
   context["model"] = model
 
@@ -393,23 +390,18 @@ def context_setup[CTXFuncT: Callable[CTXFuncP, CTXFuncR]](
       if context["row_err"] and errors is not None:
         dont_report_fields = context["fields_to_not_report"]
         for field_name, (field_input, err) in context["row_err"].items():
-          if field_name != "Category":
-            pass
-
           dont_report_check_func = context["special_dont_report_conditions"].get(field_name)
           is_dont_report_field = field_name in dont_report_fields
 
           dont_report = (
-            is_dont_report_field or dont_report_check_func(field_input)
-            if dont_report_check_func
-            else is_dont_report_field
+            is_dont_report_field or dont_report_check_func(field_input) if dont_report_check_func else is_dont_report_field
           )
           if not dont_report:
             errors.append(
               RowErrPackage(
                 field_name=field_name,
                 err_reason=err,
-                row=row,
+                row=row.copy(deep=True),
               )
             )
 
@@ -542,9 +534,7 @@ def itemized_inv_first_validation_pass(
   itemized_invoice_data[ItemizedInvoiceCols.Store_Name] = convert_storenum_to_str(storenum)
 
   # filter itemized invoices down to only RJR and PM departments
-  itemized_invoice_data = itemized_invoice_data[
-    itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(scan_depts)
-  ]
+  itemized_invoice_data = itemized_invoice_data[itemized_invoice_data[ItemizedInvoiceCols.Dept_ID].isin(scan_depts)]
 
   itemized_invoice_data = itemized_invoice_data.map(fix_decimals)
   itemized_invoice_data = itemized_invoice_data.astype(object)
@@ -697,8 +687,7 @@ def apply_buydowns(group: DataFrame, buydowns_data: BuydownsDataType) -> DataFra
     upc = row[ItemizedInvoiceCols.ItemNum]
 
     buydowns_data_match = buydowns_data.loc[
-      (buydowns_data[GSheetsBuydownsCols.State] == state)
-      & (buydowns_data[GSheetsBuydownsCols.UPC] == upc),
+      (buydowns_data[GSheetsBuydownsCols.State] == state) & (buydowns_data[GSheetsBuydownsCols.UPC] == upc),
       :,
     ]
 
@@ -739,9 +728,7 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
   # has_multiple_coupons = sum(is_coupon) > 1
 
   if has_coupon:
-    coupon_line_indexes = group.loc[
-      is_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")
-    ].index
+    coupon_line_indexes = group.loc[is_coupon & ~group.duplicated(ItemizedInvoiceCols.ItemNum, keep="first")].index
 
     group = combine_same_coupons(group, coupon_line_indexes)
 
@@ -759,9 +746,7 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
 
     # TODO account for percentage discounts
 
-    distributed_discounts = distribute_discount(
-      invoice_prices, invoice_quantities, biggest_coupon_value
-    )
+    distributed_discounts = distribute_discount(invoice_prices, invoice_quantities, biggest_coupon_value)
 
     # TODO update to apply to PID coupon after identifying SCANNED coupons
     group.loc[is_coupon_applicable, ItemizedInvoiceCols.Acct_Promo_Name] = biggest_coupon_name
@@ -770,9 +755,7 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
   return group
 
 
-def identify_bulk_rates(
-  group: DataFrame, bulk_rate_data: dict[StoreNum, BulkRateDataType]
-) -> DataFrame:
+def identify_bulk_rates(group: DataFrame, bulk_rate_data: dict[StoreNum, BulkRateDataType]) -> DataFrame:
   if group.empty:
     return group
 
@@ -787,9 +770,7 @@ def identify_bulk_rates(
     # check if the itemnum is in the bulk rate data and whether the quantity meets the minimum required for a bulk rate
     itemnum = row[ItemizedInvoiceCols.ItemNum]
     if itemnum in store_bulk_data[BulkRateCols.ItemNum].values:
-      bulk_rate_row: Series = store_bulk_data.loc[
-        store_bulk_data[BulkRateCols.ItemNum] == itemnum
-      ].iloc[0]
+      bulk_rate_row: Series = store_bulk_data.loc[store_bulk_data[BulkRateCols.ItemNum] == itemnum].iloc[0]
       bulk_quan = bulk_rate_row[BulkRateCols.Bulk_Quan]
       bulk_price = bulk_rate_row[BulkRateCols.Bulk_Price]
 
@@ -813,7 +794,7 @@ def identify_multipack(group: DataFrame):
     return group
 
   # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
-  # if invoicenum in [230784, "230784"]:
+  # if invoicenum in [106745, "106745"]:
   #   pass
 
   retail_multipack_rows = group.loc[group[ItemizedInvoiceCols.MixNMatchRate].notna()]
@@ -827,7 +808,7 @@ def identify_multipack(group: DataFrame):
       pattern = compile(mixnmatch_rate_pattern.substitute(uom=uom))
       if match := pattern.match(mixnmatchrate):
         multipack_quantity = int(match["Quantity"])
-        multipack_price = Decimal(match["Price"])
+        multipack_price = abs(Decimal(match["Price"]))
 
         if multipack_quantity == 1:
           discount_per_item = row[ItemizedInvoiceCols.Inv_Price] - multipack_price
@@ -843,9 +824,7 @@ def identify_multipack(group: DataFrame):
           continue
 
         # TODO check if this mix n match is a manufacturer multipack or a retailer multipack
-        if multipack_desc := VALID_MANUFACTURER_MULTIPACK_PATTERNS.get(
-          (multipack_quantity, multipack_price)
-        ):
+        if multipack_desc := VALID_MANUFACTURER_MULTIPACK_PATTERNS.get((multipack_quantity, multipack_price)):
           disc_amt_set_field = ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt
           multi_quantity_set_field = ItemizedInvoiceCols.Manufacturer_Multipack_Quantity
           group.loc[index, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = multipack_desc
@@ -878,7 +857,9 @@ def identify_multipack(group: DataFrame):
     coupon_data.update(
       {
         "price_per": abs(multiunit_coupon_row[ItemizedInvoiceCols.PricePer]),
-        "code": multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
+        "code": COUPON_IDENTIFIER_CODES[multiunit_coupon_itemnum]
+        if multiunit_coupon_itemnum in COUPON_IDENTIFIER_CODES
+        else multiunit_coupon_row[ItemizedInvoiceCols.ItemName_Extra],
       }
     )
 
@@ -890,15 +871,13 @@ def identify_multipack(group: DataFrame):
 
   for multiunit_coupon_itemnum, coupon_data in multiunit_coupon_data.items():
     multiunit_coupon_code = coupon_data["code"]
-    multiunit_coupon_value = coupon_data["price_per"]
+    multiunit_coupon_value = abs(coupon_data["price_per"])
     multiunit_coupon_quantity = coupon_data["quantity"]
 
     applicable_itemnums = MULTIPACK_IDENTIFIERS.get(multiunit_coupon_itemnum)
 
     if applicable_itemnums is None:
-      logger.error(
-        f"Unable to find applicable departments for loyalty coupon {multiunit_coupon_itemnum}"
-      )
+      logger.error(f"Unable to find applicable departments for loyalty coupon {multiunit_coupon_itemnum}")
       continue
 
     is_multiunit_applicable = itemnums.isin(applicable_itemnums)
@@ -910,12 +889,8 @@ def identify_multipack(group: DataFrame):
       )
       continue
 
-    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = (
-      multiunit_coupon_code
-    )
-    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt] = (
-      multiunit_coupon_value / 2
-    )
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Desc] = multiunit_coupon_code
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Discount_Amt] = multiunit_coupon_value / 2
     group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Manufacturer_Multipack_Quantity] = 2
 
     invoice_applicable_quantities = group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Quantity]
@@ -924,12 +899,8 @@ def identify_multipack(group: DataFrame):
       invoice_applicable_quantities, multiunit_coupon_value, multiunit_coupon_quantity
     )
 
-    group.loc[
-      is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt
-    ] = distributed_discounts
-    group.loc[
-      is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity
-    ] = distributed_quantities
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt] = distributed_discounts
+    group.loc[is_multiunit_applicable, ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity] = distributed_quantities
 
   return group
 
@@ -990,9 +961,7 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
       applicable_depts = LOYALTY_IDENTIFIERS.get(loyalty_coupon_itemnum)
 
       if applicable_depts is None:
-        logger.error(
-          f"Unable to find applicable departments for loyalty coupon {loyalty_coupon_itemnum}"
-        )
+        logger.error(f"Unable to find applicable departments for loyalty coupon {loyalty_coupon_itemnum}")
         continue
 
       is_loyalty_applicable = dept_ids.isin(applicable_depts)
@@ -1000,14 +969,10 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
       invoice_applicable_prices = group.loc[is_loyalty_applicable, ItemizedInvoiceCols.Inv_Price]
       invoice_applicable_quantities = group.loc[is_loyalty_applicable, ItemizedInvoiceCols.Quantity]
 
-      distributed_discounts = distribute_discount(
-        invoice_applicable_prices, invoice_applicable_quantities, loyalty_coupon_value
-      )
+      distributed_discounts = distribute_discount(invoice_applicable_prices, invoice_applicable_quantities, loyalty_coupon_value)
 
       group.loc[is_loyalty_applicable, ItemizedInvoiceCols.loyalty_disc_desc] = loyalty_coupon_code
-      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.PID_Coupon_Discount_Amt] = (
-        distributed_discounts
-      )
+      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.PID_Coupon_Discount_Amt] = distributed_discounts
 
   return group
 

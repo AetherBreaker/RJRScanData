@@ -95,7 +95,7 @@ def validate_bulk(
   return bulk_results
 
 
-@cached_for_testing(date_for_sig=CUR_WEEK)
+# @cached_for_testing(date_for_sig=CUR_WEEK)
 def process_promo_data[T: ItemizedInvoiceDataType](
   item_lines: Annotated[T, "ignore_for_sig"],
   live: Annotated[LiveCustom, "ignore_for_sig"],
