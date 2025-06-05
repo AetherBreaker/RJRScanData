@@ -42,9 +42,7 @@ full_period_start, full_period_end = rjr_start_end_dates(SETTINGS.week_shift)
 
 
 queries: QueryDict = {
-  "invoices": QueryPackage(
-    query=build_itemized_invoice_query(full_period_start, full_period_end), cols=ItemizedInvoiceCols
-  ),
+  "invoices": QueryPackage(query=build_itemized_invoice_query(full_period_start, full_period_end), cols=ItemizedInvoiceCols),
   "employees": QueryPackage(build_employee_info_query(), cols=["Cashier_ID", "EmpName"]),
 }
 
@@ -83,12 +81,12 @@ DEFAULT_STORES_LIST = [
   34,
   35,
   36,
-  37,
+  # 37,
   38,
   40,
   42,
   43,
-  44,
+  # 44,
   45,
   46,
   48,
@@ -102,12 +100,12 @@ DEFAULT_STORES_LIST = [
   57,
   # 59,
   60,
-  62,
-  63,
-  64,
+  # 62,
+  # 63,
+  # 64,
   65,
-  66,
-  67,
+  # 66,
+  # 67,
   82,
   84,
   85,
@@ -161,9 +159,7 @@ with LiveCustom(
   pbar = live.pbar
 
   remaining_callable = live.init_remaining((items, "Itemized Invoices"))
-  item_lines = validate_and_concat_itemized(
-    pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty
-  )
+  item_lines = validate_and_concat_itemized(pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty)
 
   item_lines.sort_values(
     by=[

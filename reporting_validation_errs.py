@@ -33,7 +33,7 @@ def assemble_validation_error_report(
 
   process_errs_task = pbar.add_task("Processing Validation Errors", total=len(validation_errors))
 
-  for field_name, err_reason, row in validation_errors:
+  for field_name, field_input, err_reason, row in validation_errors:
     errs = err_reason.errors(
       include_context=False,
       include_input=False,
@@ -42,6 +42,7 @@ def assemble_validation_error_report(
 
     for err in errs:
       row["err_field_name"] = field_name
+      row["err_field_input"] = field_input
       row["err_reason"] = f"{err["type"]}: {err["msg"]}"
       new_rows.append(row)
     pbar.update(process_errs_task, advance=1)
@@ -51,6 +52,7 @@ def assemble_validation_error_report(
   col_names = result.columns.tolist()
 
   col_names.insert(0, col_names.pop(col_names.index("err_reason")))
+  col_names.insert(0, col_names.pop(col_names.index("err_field_input")))
   col_names.insert(0, col_names.pop(col_names.index("err_field_name")))
 
   result = result[col_names]

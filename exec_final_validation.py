@@ -13,14 +13,7 @@ from dataframe_utils import fillnas
 from pandas import DataFrame, concat, read_csv
 from reporting_validation_errs import assemble_validation_error_report
 from rich.progress import Progress
-from types_column_names import (
-  AltriaScanHeaders,
-  ItemizedInvoiceCols,
-  ITGScanHeaders,
-  RJRNamesFinal,
-  RJRScanHeaders,
-)
-from types_custom import ModelContextType
+from types_column_names import AltriaScanHeaders, ItemizedInvoiceCols, ITGScanHeaders, RJRNamesFinal, RJRScanHeaders
 from utils import (
   CWD,
   alt_start_end_dates,
@@ -89,25 +82,25 @@ RJR_ERR_OUTPUT_FILE = RJR_ERR_OUTPUT_FLDR / f"RJRScanErrors_{shifted_rjr_end_dat
 ITG_ERR_OUTPUT_FILE = ITG_ERR_OUTPUT_FLDR / f"ITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
 
 
-RJR_RULES: ModelContextType = {
-  # "fields_to_not_report": {
-  #   ItemizedInvoiceCols.CustNum,
-  #   ItemizedInvoiceCols.ItemNum,
-  # }
-}
-ALTRIA_RULES: ModelContextType = {
-  "fields_to_not_report": {
-    ItemizedInvoiceCols.CustNum,
-    # ItemizedInvoiceCols.ItemNum,
-    # AltriaScanHeaders.SKUCode,
-  }
-}
-ITG_RULES: ModelContextType = {
-  "fields_to_not_report": {
-    ItemizedInvoiceCols.CustNum,
-    ItemizedInvoiceCols.ItemNum,
-  }
-}
+# RJR_RULES: ModelContextType = {
+#   # "fields_to_not_report": {
+#   #   ItemizedInvoiceCols.CustNum,
+#   #   ItemizedInvoiceCols.ItemNum,
+#   # }
+# }
+# ALTRIA_RULES: ModelContextType = {
+#   "fields_to_not_report": {
+#     ItemizedInvoiceCols.CustNum,
+#     # ItemizedInvoiceCols.ItemNum,
+#     # AltriaScanHeaders.SKUCode,
+#   }
+# }
+# ITG_RULES: ModelContextType = {
+#   "fields_to_not_report": {
+#     ItemizedInvoiceCols.CustNum,
+#     ItemizedInvoiceCols.ItemNum,
+#   }
+# }
 
 
 def apply_rjr_validation(
@@ -133,7 +126,7 @@ def apply_rjr_validation(
     )(
       context_setup(
         model=RJRValidationModel,
-        xtra_rules=RJR_RULES,
+        # xtra_rules=RJR_RULES,
         errors=rjr_errors,
       )(apply_model_to_df_transforming)
     )(),
@@ -216,7 +209,7 @@ def apply_altria_validation(
     )(
       context_setup(
         model=AltriaValidationModel,
-        xtra_rules=ALTRIA_RULES,
+        # xtra_rules=ALTRIA_RULES,
         errors=altria_errors,
       )(apply_model_to_df_transforming)
     )(),
@@ -304,7 +297,7 @@ def apply_itg_validation(
     )(
       context_setup(
         model=ITGValidationModel,
-        xtra_rules=ITG_RULES,
+        # xtra_rules=ITG_RULES,
         errors=itg_errors,
       )(apply_model_to_df_transforming)
     )(),

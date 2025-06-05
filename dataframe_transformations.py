@@ -12,22 +12,11 @@ from re import compile
 from string import Template
 from typing import Annotated, Callable, Optional, ParamSpec, TypeVar
 
-from dataframe_utils import (
-  NULL_VALUES,
-  combine_same_coupons,
-  distribute_discount,
-  distribute_multipack,
-  fix_decimals,
-)
+from dataframe_utils import NULL_VALUES, combine_same_coupons, distribute_discount, distribute_multipack, fix_decimals
 from pandas import DataFrame, Series, concat, isna
 from rich.progress import Progress
 from sql_querying import CUR_WEEK
-from types_column_names import (
-  BulkRateCols,
-  GSheetsBuydownsCols,
-  GSheetsVAPDiscountsCols,
-  ItemizedInvoiceCols,
-)
+from types_column_names import BulkRateCols, GSheetsBuydownsCols, GSheetsVAPDiscountsCols, ItemizedInvoiceCols
 from types_custom import (
   AddressInfoType,
   BulkDataPackage,
@@ -41,13 +30,7 @@ from types_custom import (
   StoreNum,
   VAPDataType,
 )
-from utils import (
-  cached_for_testing,
-  convert_storenum_to_str,
-  is_not_integer,
-  taskgen_whencalled,
-  wraps,
-)
+from utils import cached_for_testing, convert_storenum_to_str, taskgen_whencalled, wraps
 from validation_config import CustomBaseModel
 from validation_itemizedinvoice import ItemizedInvoiceModel
 from validators_shared import map_to_upca
@@ -319,11 +302,6 @@ scan_depts = rjr_depts.union(pm_depts)
 
 
 base_context: ModelContextType = {
-  "fields_to_not_remove": set(),
-  "fields_to_not_report": {"Dept_ID"},
-  # "fields_to_not_report": set(),
-  "special_dont_report_conditions": {"Quantity": is_not_integer},
-  "special_dont_remove_conditions": {"Quantity": is_not_integer},
   "remove_row": ...,
   "row_id": ...,
   "input": ...,
@@ -337,26 +315,11 @@ CTXFuncR = TypeVar("CTXFuncR")
 
 def context_setup[CTXFuncT: Callable[CTXFuncP, CTXFuncR]](
   model: type[CustomBaseModel],
-  xtra_rules: ModelContextType = {},
+  # xtra_rules: ModelContextType = {},
   errors: Optional[list[RowErrPackage]] = None,
 ) -> Callable[[CTXFuncT], CTXFuncT]:
   context = deepcopy(base_context)
 
-  context["fields_to_not_remove"] = {
-    model.lookup_field(field) for field in context["fields_to_not_remove"].union(xtra_rules.pop("fields_to_not_remove", set()))
-  }
-  context["fields_to_not_report"] = {
-    model.lookup_field(field) for field in context["fields_to_not_report"].union(xtra_rules.pop("fields_to_not_report", set()))
-  }
-  context["special_dont_report_conditions"].update(xtra_rules.pop("special_dont_report_conditions", {}))
-  context["special_dont_remove_conditions"].update(xtra_rules.pop("special_dont_remove_conditions", {}))
-
-  context["special_dont_report_conditions"] = {
-    model.lookup_field(field): func for field, func in context["special_dont_report_conditions"].items()
-  }
-  context["special_dont_remove_conditions"] = {
-    model.lookup_field(field): func for field, func in context["special_dont_remove_conditions"].items()
-  }
   context["model"] = model
 
   def decorator[**P, R](func: Callable[P, R]) -> Callable[P, R]:
@@ -388,22 +351,15 @@ def context_setup[CTXFuncT: Callable[CTXFuncP, CTXFuncR]](
       )
 
       if context["row_err"] and errors is not None:
-        dont_report_fields = context["fields_to_not_report"]
         for field_name, (field_input, err) in context["row_err"].items():
-          dont_report_check_func = context["special_dont_report_conditions"].get(field_name)
-          is_dont_report_field = field_name in dont_report_fields
-
-          dont_report = (
-            is_dont_report_field or dont_report_check_func(field_input) if dont_report_check_func else is_dont_report_field
-          )
-          if not dont_report:
-            errors.append(
-              RowErrPackage(
-                field_name=field_name,
-                err_reason=err,
-                row=row.copy(deep=True),
-              )
+          errors.append(
+            RowErrPackage(
+              field_name=field_name,
+              field_input=field_input,
+              err_reason=err,
+              row=row.copy(deep=True),
             )
+          )
 
       return result
 
@@ -545,8 +501,6 @@ def itemized_inv_first_validation_pass(
 
   series_to_concat = []
 
-  rules = {ItemizedInvoiceCols.CustNum: None}
-
   itemized_invoice_data.apply(
     taskgen_whencalled(
       pbar,
@@ -556,7 +510,7 @@ def itemized_inv_first_validation_pass(
     )(
       context_setup(
         model=ItemizedInvoiceModel,
-        xtra_rules=rules,
+        # xtra_rules=rules,
       )(apply_addrinfo_and_initial_validation)
     )(),
     axis=1,

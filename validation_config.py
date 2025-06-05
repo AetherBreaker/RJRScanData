@@ -3,6 +3,8 @@ if __name__ == "__main__":
 
   configure_logging()
 
+from collections.abc import Callable
+from dataclasses import dataclass
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self
 
@@ -30,6 +32,14 @@ VALIDATION_FAILED_CHECK_CONSTANT = "VALIDATION_FAILED"
 class ValidationErrPackage(NamedTuple):
   field_value: Any
   err: ValidationError
+
+
+@dataclass
+class ReportingFieldInfo:
+  report_field: bool = True
+  remove_row_if_error: bool = True
+  dont_report_if: Callable[[Any], bool] | None = None
+  dont_remove_if: Callable[[Any], bool] | None = None
 
 
 class CustomBaseModel(BaseModel):
@@ -61,22 +71,23 @@ class CustomBaseModel(BaseModel):
     except Exception as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
 
-      test = cls.__annotations__.get(info.field_name, None).__metadata__
-
-      if info.field_name == "":
-        pass
+      reporting_meta: ReportingFieldInfo = next(
+        (item for item in cls.__annotations__[info.field_name].__metadata__ if isinstance(item, ReportingFieldInfo)),
+        ReportingFieldInfo(),
+      )
 
       # if the exception is a ValidationError...
       if isinstance(e, ValidationError):
-        context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
+        dont_report_if_func = reporting_meta.dont_report_if
+        report_if = reporting_meta.report_field or not dont_report_if_func if dont_report_if_func else reporting_meta.report_field
+        if report_if:
+          context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
 
         if context["remove_row"]:
-          dont_remove_fields = context["fields_to_not_remove"]
+          dont_remove_check_func = reporting_meta.dont_remove_if
+          remove_row = reporting_meta.remove_row_if_error
 
-          dont_remove_check_func = context["special_dont_remove_conditions"].get(info.field_name)
-          is_dont_remove_field = info.field_name in dont_remove_fields
-
-          dont_remove = is_dont_remove_field or dont_remove_check_func(data) if dont_remove_check_func else False
+          dont_remove = (not remove_row) or dont_remove_check_func(data) if dont_remove_check_func else not remove_row
 
           if dont_remove:
             context["remove_row"][info.field_name] = False
@@ -94,24 +105,41 @@ class CustomBaseModel(BaseModel):
   def log_failed_validation(cls, data: Any, handler: ModelWrapValidatorHandler[Self], info: ValidationInfo) -> Self:
     results = VALIDATION_FAILED_CHECK_CONSTANT
     context: "ModelContextType" = info.context
-    context["remove_row"][info.field_name] = True
+    context["remove_row"][info.field_name] = cls.remove_bad_rows
 
     try:
       results = handler(data)
       context["remove_row"][info.field_name] = False
     except ValidationError as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
+      field_name = info.field_name
 
+      if not field_name:
+        errs = exc_val.errors()
+        for err in errs:
+          loc = err["loc"]
+          if loc[0] == "Inv_Price":
+            field_name = "price"
+          elif loc[0] == "Manufacturer_Multipack_Desc":
+            field_name = "manufacturer_multipack_desc"
+
+      reporting_meta: ReportingFieldInfo = next(
+        (item for item in cls.__annotations__[field_name].__metadata__ if isinstance(item, ReportingFieldInfo)),
+        ReportingFieldInfo(),
+      )
+
+      # if the exception is a ValidationError...
       if isinstance(e, ValidationError):
-        context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
+        dont_report_if_func = reporting_meta.dont_report_if
+        report_if = reporting_meta.report_field or not dont_report_if_func if dont_report_if_func else reporting_meta.report_field
+        if report_if:
+          context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
 
         if context["remove_row"]:
-          dont_remove_fields = context["fields_to_not_remove"]
+          dont_remove_check_func = reporting_meta.dont_remove_if
+          remove_row = reporting_meta.remove_row_if_error
 
-          dont_remove_check_func = context["special_dont_remove_conditions"].get(info.field_name)
-          is_dont_remove_field = info.field_name in dont_remove_fields
-
-          dont_remove = is_dont_remove_field or dont_remove_check_func(data) if dont_remove_check_func else False
+          dont_remove = (not remove_row) or dont_remove_check_func(data) if dont_remove_check_func else not remove_row
 
           if dont_remove:
             context["remove_row"][info.field_name] = False

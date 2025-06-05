@@ -114,9 +114,7 @@ def truncate_decimal(x: Decimal, exponent: Decimal = DECIMAL_MAX_DIGITS) -> Deci
     return x
 
 
-def pbar_writer(
-  pbar: Progress, task_id: TaskID, filestream: BufferedWriter
-) -> Callable[[bytes], None]:
+def pbar_writer(pbar: Progress, task_id: TaskID, filestream: BufferedWriter) -> Callable[[bytes], None]:
   def wrapped_writer(data: bytes):
     filestream.write(data)
     pbar.update(task_id, advance=len(data))
@@ -195,16 +193,10 @@ class DoNotCacheException[**P](Exception):
     return self.__intended_return
 
 
-def process_arg_signature(
-  arg: Any, hash_list: list[Any], func: Callable, annotations: list | dict = None
-):
+def process_arg_signature(arg: Any, hash_list: list[Any], func: Callable, annotations: list | dict = None):
   if func.__qualname__.split(".")[0] == arg.__class__.__qualname__:
     return
-  if (
-    annotations
-    and hasattr(annotations, "__metadata__")
-    and "ignore_for_sig" in annotations.__metadata__
-  ):
+  if annotations and hasattr(annotations, "__metadata__") and "ignore_for_sig" in annotations.__metadata__:
     return
   if isinstance(arg, (str, int, float)):
     hash_list.append(arg)
@@ -213,11 +205,7 @@ def process_arg_signature(
       if annotations and (anno := annotations.get(key)):
         if hasattr(anno, "__metadata__") and "ignore_for_sig" in anno.__metadata__:
           continue
-      if (
-        key in IGNORE_KWARG_KEYS
-        or isinstance(key, IGNORE_ARGTYPES)
-        or isinstance(value, IGNORE_ARGTYPES)
-      ):
+      if key in IGNORE_KWARG_KEYS or isinstance(key, IGNORE_ARGTYPES) or isinstance(value, IGNORE_ARGTYPES):
         continue
       process_arg_signature(key, hash_list, func)
       # else:
@@ -229,9 +217,7 @@ def process_arg_signature(
       if annotations:
         with contextlib.suppress(IndexError):
           anno = annotations[index]
-          if (
-            anno and hasattr(annotations, "__metadata__") and "ignore_for_sig" in anno.__metadata__
-          ):
+          if anno and hasattr(annotations, "__metadata__") and "ignore_for_sig" in anno.__metadata__:
             continue
       if isinstance(item, IGNORE_ARGTYPES):
         continue
@@ -252,11 +238,7 @@ def cached_for_testing[**TP, TR](
   date_for_sig: datetime = None,
 ) -> Callable[TP, TR] | Callable[[Callable[TP, TR]], Callable[TP, TR]]:
   if pickle_path_override is not None:
-    pickle_path_override = (
-      pickle_path_override
-      if pickle_path_override.endswith(".pickle")
-      else pickle_path_override + ".pickle"
-    )
+    pickle_path_override = pickle_path_override if pickle_path_override.endswith(".pickle") else pickle_path_override + ".pickle"
 
   def cached_for_testing_under[**P, R](func: Callable[P, R]) -> Callable[P, R]:
     """
@@ -288,9 +270,7 @@ def cached_for_testing[**TP, TR](
         # Process all args to form a unique function signature
         # hash the function name and the arguments to get a unique filename
         arg_anno = [v for k, v in func.__annotations__.items() if k not in kwargs and k != "return"]
-        kwarg_anno = {
-          k: v for k, v in func.__annotations__.items() if k in kwargs and k != "return"
-        }
+        kwarg_anno = {k: v for k, v in func.__annotations__.items() if k in kwargs and k != "return"}
 
         hash_list = [func_path]
 

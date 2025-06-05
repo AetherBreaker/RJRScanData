@@ -21,22 +21,10 @@ from pydantic import (
   field_serializer,
 )
 from types_column_names import AltriaScanHeaders, ItemizedInvoiceCols
-from types_custom import (
-  AltriaDeptsEnum,
-  FTXDeptIDsEnum,
-  ReportingFieldInfo,
-  StatesEnum,
-  StoreNum,
-  UnitsOfMeasureEnum,
-)
+from types_custom import AltriaDeptsEnum, FTXDeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import is_not_integer, truncate_decimal
-from validation_config import CustomBaseModel
-from validators_shared import (
-  pad_to_length,
-  validate_ean,
-  validate_unit_type,
-  validate_upc_checkdigit,
-)
+from validation_config import CustomBaseModel, ReportingFieldInfo
+from validators_shared import pad_to_length, validate_ean, validate_unit_type, validate_upc_checkdigit
 
 logger = getLogger(__name__)
 
@@ -84,7 +72,7 @@ class AltriaValidationModel(CustomBaseModel):
   StoreCity: Annotated[Optional[str], Field(alias="Store_City")]
   StoreState: Annotated[Optional[StatesEnum], Field(alias="Store_State")]
   StoreZip: Annotated[Optional[str], Field(alias="Store_Zip")]
-  Category: Annotated[AltriaDeptsEnum, Field(alias="Dept_ID")]
+  Category: Annotated[AltriaDeptsEnum, Field(alias="Dept_ID"), ReportingFieldInfo(report_field=False)]
   ManufacturerName: Annotated[Optional[str], Field(alias="ItemName_Extra")] = None
   SKUCode: Annotated[SkipValidation[str], Field(alias="ItemNum")]
   # UPCCode: Annotated[str, Field(alias="ItemNum", min_length=6, max_length=14, pattern=r"^[0-9]+$")]
@@ -183,20 +171,6 @@ class AltriaValidationModel(CustomBaseModel):
     ItemizedInvoiceCols.AgeVerificationMethod: AltriaScanHeaders.AgeValidationMethod,
   }
   remove_bad_rows: ClassVar[bool] = True
-
-  # @field_validator("ConsumerUnits", mode="wrap")
-  # @classmethod
-  # def test_consumerunits_validation(
-  #   cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo
-  # ):
-  #   results = data
-  #   try:
-  #     results = handler(data)
-  #   except Exception as e:
-  #     exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
-  #     pass
-
-  #   return results
 
   @computed_field
   @property

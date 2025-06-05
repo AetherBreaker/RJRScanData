@@ -1,24 +1,14 @@
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Annotated, Callable
 
-from dataframe_transformations import (
-  bulk_rate_validation_pass,
-  itemized_inv_first_validation_pass,
-  process_item_lines,
-)
+from dataframe_transformations import bulk_rate_validation_pass, itemized_inv_first_validation_pass, process_item_lines
 from gsheet_data_processing import SheetCache
 from pandas import concat
 from rich.progress import Progress
 from rich_custom import LiveCustom
 from sql_querying import CUR_WEEK
 from types_column_names import ItemizedInvoiceCols
-from types_custom import (
-  BulkDataPackage,
-  BulkRateDataType,
-  ItemizedDataPackage,
-  ItemizedInvoiceDataType,
-  StoreNum,
-)
+from types_custom import BulkDataPackage, BulkRateDataType, ItemizedDataPackage, ItemizedInvoiceDataType, StoreNum
 from utils import cached_for_testing, taskgen_whencalled
 
 addr_data = SheetCache().info
@@ -95,7 +85,7 @@ def validate_bulk(
   return bulk_results
 
 
-# @cached_for_testing(date_for_sig=CUR_WEEK)
+@cached_for_testing(date_for_sig=CUR_WEEK)
 def process_promo_data[T: ItemizedInvoiceDataType](
   item_lines: Annotated[T, "ignore_for_sig"],
   live: Annotated[LiveCustom, "ignore_for_sig"],

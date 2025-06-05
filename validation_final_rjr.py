@@ -8,20 +8,12 @@ from decimal import Decimal
 from logging import getLogger
 from typing import ClassVar, Optional
 
-from pydantic import (
-  AfterValidator,
-  AliasChoices,
-  BeforeValidator,
-  Field,
-  ValidationInfo,
-  computed_field,
-  field_validator,
-)
+from pydantic import AfterValidator, AliasChoices, BeforeValidator, Field, ValidationInfo, computed_field, field_validator
 from types_column_names import ItemizedInvoiceCols, RJRScanHeaders
-from types_custom import PromoFlag, ReportingFieldInfo, StatesEnum, StoreNum, UnitsOfMeasureEnum
+from types_custom import PromoFlag, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from typing_extensions import Annotated
 from utils import is_not_integer, truncate_decimal
-from validation_config import CustomBaseModel
+from validation_config import CustomBaseModel, ReportingFieldInfo
 from validators_shared import validate_unit_type
 
 logger = getLogger(__name__)

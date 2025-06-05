@@ -4,7 +4,6 @@ if __name__ == "__main__":
   configure_logging()
 
 from collections import UserDict
-from collections.abc import Callable
 from enum import Enum, StrEnum, auto
 from logging import getLogger
 from typing import Any, Literal, NamedTuple, TypedDict
@@ -58,11 +57,7 @@ class ColNameEnum(StrEnum):
 
   @classmethod
   def all_columns(cls) -> list[str]:
-    return [
-      str(column)
-      for column in cls
-      if str(column) not in cls.__exclude__ and not str(column).startswith("_")
-    ]
+    return [str(column) for column in cls if str(column) not in cls.__exclude__ and not str(column).startswith("_")]
 
   @classmethod
   def err_reporting_columns(cls) -> list[str]:
@@ -73,22 +68,14 @@ class ColNameEnum(StrEnum):
     return [
       "err_field_name",
       "err_reason",
-      *[
-        str(column)
-        for column in cls
-        if str(column) not in cls.__exclude__ and not str(column).startswith("_")
-      ],
+      *[str(column) for column in cls if str(column) not in cls.__exclude__ and not str(column).startswith("_")],
     ]
 
   @classmethod
   def init_columns(cls) -> list[str]:
     if not cls.__init_include__:
       return cls.all_columns()
-    return [
-      str(column)
-      for column in cls
-      if str(column) in cls.__init_include__ and not str(column).startswith("_")
-    ]
+    return [str(column) for column in cls if str(column) in cls.__init_include__ and not str(column).startswith("_")]
 
   @classmethod
   def testing_columns(cls) -> list[str]:
@@ -383,10 +370,6 @@ class FTXDeptIDsEnum(ColNameEnum):
   VaporDevices = "Vapor Devices"
 
 
-
-
-
-
 type StoreNum = int
 
 type SQLPWD = str
@@ -423,27 +406,18 @@ class SQLCreds(TypedDict):
 type FieldName = str
 
 
-class ReportingFieldInfo(TypedDict):
-  report_field: bool = True
-  remove_row_if_error: bool = True
-  dont_report_if: Callable[[Any], bool] | None = None
-  dont_remove_if: Callable[[Any], bool] | None = None
-
 class ModelContextType(TypedDict):
   store_num: StoreNum
   row_id: int
   input: dict[str, Any]
   model: CustomBaseModel
   row_err: dict[FieldName, ValidationErrPackage]
-  fields_to_not_report: set[FieldName]
-  fields_to_not_remove: set[FieldName]
-  special_dont_report_conditions: dict[FieldName, Callable[[Any], bool]]
-  special_dont_remove_conditions: dict[FieldName, Callable[[Any], bool]]
   remove_row: dict[FieldName, bool]
 
 
 class RowErrPackage(NamedTuple):
   field_name: FieldName
+  field_input: Any
   err_reason: ValidationError
   row: Series
 
