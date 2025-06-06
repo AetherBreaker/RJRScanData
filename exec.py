@@ -107,12 +107,7 @@ with LiveCustom(
   # profiler.enable()
 
   base_item_lines = process_promo_data(
-    item_lines=base_item_lines,
-    live=live,
-    bulk_rates=bulk_rates,
-    pbar=pbar,
-    buydowns_data=buydowns_data,
-    vap_data=vap_data,
+    item_lines=base_item_lines, bulk_rates=bulk_rates, pbar=pbar, buydowns_data=buydowns_data, vap_data=vap_data
   )
 
   # from pathlib import Path

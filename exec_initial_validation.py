@@ -88,7 +88,6 @@ def validate_bulk(
 @cached_for_testing(date_for_sig=CUR_WEEK)
 def process_promo_data[T: ItemizedInvoiceDataType](
   item_lines: Annotated[T, "ignore_for_sig"],
-  live: Annotated[LiveCustom, "ignore_for_sig"],
   bulk_rates: Annotated[BulkRateDataType, "ignore_for_sig"],
   pbar: Annotated[Progress, "ignore_for_sig"],
   buydowns_data: Annotated[dict, "ignore_for_sig"],

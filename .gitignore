@@ -203,12 +203,13 @@ pip-selfcheck.json
 /Input FTX Scan Data/
 /Output RJR Scan Data/
 /Output Altria Scan Data/
+/Output ITG Scan Data
 /Scan Data Documentation/
 /Test Scan Files/
-/Validation Reports/
 /_testing_pickles/
 /item_lines/
 /logs/
+/Validation Errors Output
 
 *.csv
 *.dat
@@ -220,7 +221,4 @@ SFT*.txt
 /store_sql_creds.json
 /ftp_creds.json
 /max_width.txt
-/_testing_pickles TEMP
-/_testing_pickles TMP
-/_testing_pickles tmp2
 /profiler_output.txt
