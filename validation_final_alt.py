@@ -7,20 +7,10 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from functools import partial
 from logging import getLogger
-from typing import Annotated, ClassVar, Optional
+from typing import Annotated, ClassVar, Literal, Optional
 
 from dateutil.relativedelta import SA, relativedelta
-from pydantic import (
-  AfterValidator,
-  AliasChoices,
-  BeforeValidator,
-  Field,
-  FieldSerializationInfo,
-  SkipValidation,
-  computed_field,
-  field_serializer,
-)
-from types_column_names import AltriaScanHeaders, ItemizedInvoiceCols
+from pydantic import AfterValidator, AliasChoices, BeforeValidator, Field, SkipValidation, computed_field, field_serializer
 from types_custom import AltriaDeptsEnum, FTXDeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import is_not_integer, truncate_decimal
 from validation_config import CustomBaseModel, ReportingFieldInfo
@@ -136,41 +126,24 @@ class AltriaValidationModel(CustomBaseModel):
   Price_at_sale: Annotated[
     Decimal,
     AfterValidator(abs),
-    Field(alias=AliasChoices("PricePer", "FinalSalesPrice"), exclude=True),
+    Field(alias=AliasChoices("PricePer"), exclude=True),
   ]
-  special_TransactionDate: Annotated[Optional[date], BeforeValidator(fix_date), Field(alias="TransactionDate", exclude=True)] = (
-    None
-  )
-  special_TransactionTime: Annotated[Optional[time], Field(alias="TransactionTime", exclude=True)] = None
 
-  field_name_lookup: ClassVar[dict[ItemizedInvoiceCols, AltriaScanHeaders]] = {
-    ItemizedInvoiceCols.Invoice_Number: AltriaScanHeaders.TransactionID,
-    ItemizedInvoiceCols.Store_Number: AltriaScanHeaders.StoreNumber,
-    ItemizedInvoiceCols.Store_Name: AltriaScanHeaders.StoreName,
-    ItemizedInvoiceCols.Store_Address: AltriaScanHeaders.StoreAddress,
-    ItemizedInvoiceCols.Store_City: AltriaScanHeaders.StoreCity,
-    ItemizedInvoiceCols.Store_State: AltriaScanHeaders.StoreState,
-    ItemizedInvoiceCols.Store_Zip: AltriaScanHeaders.StoreZip,
-    ItemizedInvoiceCols.Dept_ID: AltriaScanHeaders.Category,
-    ItemizedInvoiceCols.ItemName_Extra: AltriaScanHeaders.ManufacturerName,
-    ItemizedInvoiceCols.ItemNum: AltriaScanHeaders.UPCCode,
-    ItemizedInvoiceCols.ItemName: AltriaScanHeaders.ItemDescription,
-    ItemizedInvoiceCols.Unit_Type: AltriaScanHeaders.UnitMeasure,
-    ItemizedInvoiceCols.Quantity: AltriaScanHeaders.QtySold,
-    ItemizedInvoiceCols.Unit_Size: AltriaScanHeaders.ConsumerUnits,
-    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Quantity: AltriaScanHeaders.TotalMultiUnitDiscountQty,
-    ItemizedInvoiceCols.Altria_Manufacturer_Multipack_Discount_Amt: AltriaScanHeaders.TotalMultiUnitDiscountAmt,
-    ItemizedInvoiceCols.Acct_Promo_Name: AltriaScanHeaders.RetailerFundedDiscountName,
-    ItemizedInvoiceCols.Acct_Discount_Amt: AltriaScanHeaders.RetailerFundedDiscountAmt,
-    ItemizedInvoiceCols.loyalty_disc_desc: AltriaScanHeaders.LoyaltyDiscountName,
-    ItemizedInvoiceCols.PID_Coupon_Discount_Amt: AltriaScanHeaders.LoyaltyDiscountAmt,
-    ItemizedInvoiceCols.Store_Telephone: AltriaScanHeaders.StoreTelephone,
-    ItemizedInvoiceCols.Store_ContactEmail: AltriaScanHeaders.StoreContactEmail,
-    ItemizedInvoiceCols.CustNum: AltriaScanHeaders.LoyaltyIDNumber,
-    ItemizedInvoiceCols.Phone_1: AltriaScanHeaders.AdultTobConsumerPhoneNum,
-    ItemizedInvoiceCols.AgeVerificationMethod: AltriaScanHeaders.AgeValidationMethod,
-  }
   remove_bad_rows: ClassVar[bool] = True
+
+  @computed_field
+  @property
+  def AccountNumber(self) -> str:
+    return ALTRIA_ACCOUNT_NUMBER
+
+  @computed_field
+  @property
+  def WeekEndDate(self) -> date:
+    return self.TransactionDate + relativedelta(weekday=SA(1))
+
+  @field_serializer("WeekEndDate")
+  def serialize_week_end_date(self, WeekEndDate: date) -> Optional[str]:
+    return WeekEndDate.strftime("%Y%m%d")
 
   @computed_field
   @property
@@ -181,8 +154,8 @@ class AltriaValidationModel(CustomBaseModel):
       return self.special_TransactionDate
 
   @field_serializer("TransactionDate")
-  def serialize_transaction_date(self, TransactionDate: date, info: FieldSerializationInfo) -> Optional[str]:
-    return TransactionDate.strftime("%Y%m%d") if TransactionDate else None
+  def serialize_transaction_date(self, TransactionDate: date) -> Optional[str]:
+    return TransactionDate.strftime("%Y%m%d")
 
   @computed_field
   @property
@@ -194,38 +167,82 @@ class AltriaValidationModel(CustomBaseModel):
 
   @computed_field
   @property
+  def MultiUnitIndicator(self) -> str:
+    return "Y" if any((self.TotalMultiUnitDiscountQty is not None, self.TotalMultiUnitDiscountAmt is not None)) else "N"
+
+  @computed_field
+  @property
   def FinalSalesPrice(self) -> Decimal:
     """Calculate the final price."""
     return truncate_decimal(self.QtySold * self.Price_at_sale)
 
-  @computed_field
-  @property
-  def AcountNumber(self) -> str:
-    return ALTRIA_ACCOUNT_NUMBER
 
-  @computed_field
-  @property
-  def WeekEndDate(self) -> date:
-    return self.TransactionDate + relativedelta(weekday=SA(1))
-
-  @field_serializer("WeekEndDate")
-  def serialize_week_end_date(self, WeekEndDate: date, info: FieldSerializationInfo) -> Optional[str]:
-    return WeekEndDate.strftime("%Y%m%d") if WeekEndDate else None
-
-  @computed_field
-  @property
-  def MultiUnitIndicator(self) -> str:
-    return "Y" if any((self.TotalMultiUnitDiscountQty is not None, self.TotalMultiUnitDiscountAmt is not None)) else "N"
-
-
-class FTXPMUSAValidationModel(AltriaValidationModel):
+class FTXPMUSAValidationModel(CustomBaseModel):
   """FTX PMUSA Validation Model."""
 
-  Category: Annotated[FTXDeptIDsEnum, Field(alias="Dept_ID")]
-  DateTime: Annotated[Optional[datetime], Field(default=None, alias="DateTime", exclude=True)]
+  AccountNumber: Literal["77412"]
+  WeekEndDate: Annotated[date, BeforeValidator(fix_date)]
+  TransactionDate: Annotated[date, BeforeValidator(fix_date)]
+  TransactionTime: time
+  TransactionID: int
+  StoreNumber: StoreNum
+  StoreName: str
+  StoreAddress: Optional[str]
+  StoreCity: Optional[str]
+  StoreState: Optional[StatesEnum]
+  StoreZip: Optional[str]
+  Category: FTXDeptIDsEnum
+  ManufacturerName: Optional[str] = None
+  SKUCode: str
+  UPCCode: Annotated[
+    Annotated[
+      Annotated[str, BeforeValidator(partial(pad_to_length, length=12))]  # UPC-A must be exactly 12 characters
+      | Annotated[str, BeforeValidator(partial(pad_to_length, length=8))],  # UPC-E must be exactly 8 characters
+      AfterValidator(validate_upc_checkdigit),
+    ]
+    | Annotated[
+      str, BeforeValidator(partial(pad_to_length, length=13)), AfterValidator(validate_ean)
+    ],  # EAN-13 must be exactly 13 characters
+    Field(pattern=r"^[0-9]+$"),
+    ReportingFieldInfo(report_field=False),
+  ]
+  ItemDescription: str
+  UnitMeasure: UnitsOfMeasureEnum
+  QtySold: Annotated[int, Field(alias="Quantity", le=100)]
+  ConsumerUnits: Annotated[int, Field(gt=0)] = 1
+  MultiUnitIndicator: Literal["Y", "N"]
+  TotalMultiUnitDiscountQty: Optional[int] = None
+  TotalMultiUnitDiscountAmt: Optional[Decimal] = None
+  RetailerFundedDiscountName: Optional[str] = None
+  RetailerFundedDiscountAmt: Optional[Decimal] = None
+  CouponDiscountName: Optional[str] = None
+  CouponDiscountAmt: Optional[Decimal] = None
+  OtherManufacturerDiscountName: Optional[str] = None
+  OtherManufacturerDiscountAmt: Optional[Decimal] = None
+  LoyaltyDiscountName: Optional[str] = None
+  LoyaltyDiscountAmt: Optional[Decimal] = None
+  FinalSalesPrice: Decimal
+  StoreTelephone: Optional[int]
+  StoreContactName: Optional[str] = None
+  StoreContactEmail: Optional[str]
+  ProductGroupingCode: Optional[str] = None
+  ProductGroupingName: Optional[str] = None
+  LoyaltyIDNumber: Optional[str] = None
+  AdultTobConsumerPhoneNum: Optional[str] = None
+  AgeValidationMethod: Optional[str]
+  ManufacturerOfferName: Optional[str] = None
+  ManufacturerOfferAmt: Optional[str] = None
+  PurchaseType: Optional[str] = None
+  ReservedField43: Optional[str] = None
+  ReservedField44: Optional[str] = None
+  ReservedField45: Optional[str] = None
 
-  @computed_field
-  @property
-  def FinalSalesPrice(self) -> Decimal:
-    """Calculate the final price."""
-    return truncate_decimal(self.Price_at_sale)
+  remove_bad_rows: ClassVar[bool] = True
+
+  @field_serializer("WeekEndDate")
+  def serialize_week_end_date(self, WeekEndDate: date) -> Optional[str]:
+    return WeekEndDate.strftime("%Y%m%d")
+
+  @field_serializer("TransactionDate")
+  def serialize_transaction_date(self, TransactionDate: date) -> Optional[str]:
+    return TransactionDate.strftime("%Y%m%d")

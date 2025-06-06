@@ -242,9 +242,7 @@ def get_store_data(
     except NoConnectionError:
       logger.warning(f"SFT {storenum:0>3}: Connection failed on retry")
       if is_caching:
-        raise DoNotCacheException(
-          f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
-        )
+        raise DoNotCacheException(f"Failed to connect to store {storenum} SQL server", intended_return=empty_return)
       else:
         return empty_return
 
@@ -274,9 +272,7 @@ def get_store_data(
           stack_info=True,
         )
     if is_caching:
-      raise DoNotCacheException(
-        f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
-      )
+      raise DoNotCacheException(f"Failed to connect to store {storenum} SQL server", intended_return=empty_return)
     else:
       return empty_return
 
@@ -286,9 +282,7 @@ def get_store_data(
     if not query_result:
       logger.warning(f"SFT {storenum:0>3}: No results found for {query_name} query")
       if is_caching:
-        raise DoNotCacheException(
-          f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
-        )
+        raise DoNotCacheException(f"Failed to connect to store {storenum} SQL server", intended_return=empty_return)
       else:
         return empty_return
 
@@ -300,9 +294,7 @@ def get_store_data(
       # Do not cache if query fails to return a result. This allows for queries failed
       # due to unstable connections to be retried without needing to requery ALL stores
       if is_caching:
-        raise DoNotCacheException(
-          f"Failed to connect to store {storenum} SQL server", intended_return=empty_return
-        )
+        raise DoNotCacheException(f"Failed to connect to store {storenum} SQL server", intended_return=empty_return)
       else:
         return empty_return
 
@@ -331,7 +323,7 @@ DEFAULT_STORES_LIST = [
   6,
   7,
   8,
-  9,
+  # 9,
   10,
   11,
   12,
@@ -418,17 +410,12 @@ def query_all_stores_multithreaded[q_name: QueryName](
     pbar = live.pbar
 
     updaters = live.init_remaining(
-      *(
-        (items, f"{query_name.capitalize().replace("_", " ")} Queries")
-        for query_name in queries.keys()
-      )
+      *((items, f"{query_name.capitalize().replace("_", " ")} Queries") for query_name in queries.keys())
     )
 
     updaters = updaters if isinstance(updaters, tuple) else (updaters,)
 
-    remaining_updaters = {
-      query_name: updater for query_name, updater in zip(queries.keys(), updaters)
-    }
+    remaining_updaters = {query_name: updater for query_name, updater in zip(queries.keys(), updaters)}
     with ThreadPoolExecutor(
       max_workers=len(storenums) * len(queries),
     ) as executor:
@@ -440,9 +427,7 @@ def query_all_stores_multithreaded[q_name: QueryName](
         )
         store_querying_futures.append(future)
 
-      query_results: dict[q_name, dict[StoreNum, DataFrame]] = {
-        query_name: {} for query_name in queries.keys()
-      }
+      query_results: dict[q_name, dict[StoreNum, DataFrame]] = {query_name: {} for query_name in queries.keys()}
 
       store_querying_task = pbar.add_task("Querying Stores for Scan Data", total=len(storenums))
       for future in as_completed(store_querying_futures):

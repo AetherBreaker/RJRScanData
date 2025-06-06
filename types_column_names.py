@@ -86,7 +86,7 @@ class RJRNamesFinal(ColNameEnum):
 
 
 class AltriaScanHeaders(ColNameEnum):
-  AcountNumber = auto()
+  AccountNumber = auto()
   WeekEndDate = auto()
   TransactionDate = auto()
   TransactionTime = auto()

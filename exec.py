@@ -26,9 +26,6 @@ from types_custom import (
 )
 from utils import CWD, get_full_dates
 
-if __debug__:
-  from utils import cached_for_testing  # noqa: F401
-
 configure_logging()
 
 logger = getLogger(__name__)
@@ -38,9 +35,7 @@ full_period_start, full_period_end = get_full_dates(SETTINGS.week_shift)
 
 queries: QueryDict = {
   "bulk_rates": QueryPackage(query=build_bulk_info_query(), cols=BulkRateCols),
-  "invoices": QueryPackage(
-    query=build_itemized_invoice_query(full_period_start, full_period_end), cols=ItemizedInvoiceCols
-  ),
+  "invoices": QueryPackage(query=build_itemized_invoice_query(full_period_start, full_period_end), cols=ItemizedInvoiceCols),
 }
 
 
@@ -80,9 +75,7 @@ with LiveCustom(
 
   # with LoadReportingFiles():
   remaining_callable = live.init_remaining((items, "Itemized Invoices"))
-  base_item_lines = validate_and_concat_itemized(
-    pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty
-  )
+  base_item_lines = validate_and_concat_itemized(pbar=pbar, remaining_pbar=remaining_callable, data=itemized, empty=empty)
 
   if empty:
     for storenum in empty:
@@ -93,9 +86,9 @@ with LiveCustom(
 
   base_item_lines.sort_values(ItemizedInvoiceCols.DateTime, inplace=True)
 
-  base_item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = base_item_lines[
-    ItemizedInvoiceCols.Unit_Type
-  ].map(unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure])
+  base_item_lines.loc[:, ItemizedInvoiceCols.Unit_Type] = base_item_lines[ItemizedInvoiceCols.Unit_Type].map(
+    unit_measure_data[GSheetsUnitsOfMeasureCols.Unit_of_Measure]
+  )
 
   base_item_lines.sort_values(
     by=[
@@ -133,15 +126,15 @@ with LiveCustom(
   rjr_item_lines = base_item_lines.copy(deep=True)
   itg_item_lines = base_item_lines.copy(deep=True)
 
-  apply_altria_validation(
-    pbar=pbar,
-    input_data=altria_item_lines,
-  )
+  # apply_altria_validation(
+  #   pbar=pbar,
+  #   input_data=altria_item_lines,
+  # )
   apply_rjr_validation(
     pbar=pbar,
     input_data=rjr_item_lines,
   )
-  apply_itg_validation(
-    pbar=pbar,
-    input_data=itg_item_lines,
-  )
+  # apply_itg_validation(
+  #   pbar=pbar,
+  #   input_data=itg_item_lines,
+  # )

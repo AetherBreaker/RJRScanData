@@ -23,14 +23,14 @@ from utils import (
   taskgen_whencalled,
   truncate_decimal,
 )
-from validation_final_alt import AltriaValidationModel
-from validation_final_itg import ITGValidationModel
-from validation_final_rjr import RJRValidationModel
+from validation_final_alt import AltriaValidationModel, FTXPMUSAValidationModel
+from validation_final_itg import FTXITGValidationModel, ITGValidationModel
+from validation_final_rjr import FTXRJRValidationModel, RJRValidationModel
 
 logger = getLogger(__name__)
 
 
-RJR_SCAN_FILENAME_FORMAT = "B56192_{datetime:%Y%m%d_%H%S}_SWEETFIRETOBACCO.txt"
+RJR_SCAN_FILENAME_FORMAT = "B56192_{datetime:%Y%m%d_%H%M}_SWEETFIRETOBACCO.txt"
 ALT_SCAN_FILENAME_FORMAT = "SweetFireTobacco{date:%Y%m%d}.txt"
 ITG_SCAN_MAIN_FILENAME_FORMAT = "SweetFireTobacco{date:%m%d%Y}.csv"
 ITG_SCAN_TEST_FILENAME_FORMAT = "SweetFireTobacco{date:%m%d%Y}_TEST.csv"
@@ -69,38 +69,16 @@ FTX_ALT_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_alt_{shifted_alt_end_
 FTX_ITG_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_itg_{shifted_itg_end_date:%Y%m%d}.txt"
 
 
-ALT_ERR_OUTPUT_FLDR = ALT_OUTPUT_FOLDER / "Validation Errors Output"
-RJR_ERR_OUTPUT_FLDR = RJR_OUTPUT_FOLDER / "Validation Errors Output"
-ITG_ERR_OUTPUT_FLDR = ITG_OUTPUT_FOLDER / "Validation Errors Output"
+ERR_OUTPUT_FOLDER = CWD / "Validation Errors Output"
+ERR_OUTPUT_FOLDER.mkdir(exist_ok=True)
 
-ALT_ERR_OUTPUT_FLDR.mkdir(exist_ok=True, parents=True)
-RJR_ERR_OUTPUT_FLDR.mkdir(exist_ok=True, parents=True)
-ITG_ERR_OUTPUT_FLDR.mkdir(exist_ok=True, parents=True)
+ALT_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"ALTScanErrors_{shifted_alt_end_date:%Y%m%d}.csv"
+RJR_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"RJRScanErrors_{shifted_rjr_end_date:%Y%m%d}.csv"
+ITG_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"ITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
 
-ALT_ERR_OUTPUT_FILE = ALT_ERR_OUTPUT_FLDR / f"ALTScanErrors_{shifted_alt_end_date:%Y%m%d}.csv"
-RJR_ERR_OUTPUT_FILE = RJR_ERR_OUTPUT_FLDR / f"RJRScanErrors_{shifted_rjr_end_date:%Y%m%d}.csv"
-ITG_ERR_OUTPUT_FILE = ITG_ERR_OUTPUT_FLDR / f"ITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
-
-
-# RJR_RULES: ModelContextType = {
-#   # "fields_to_not_report": {
-#   #   ItemizedInvoiceCols.CustNum,
-#   #   ItemizedInvoiceCols.ItemNum,
-#   # }
-# }
-# ALTRIA_RULES: ModelContextType = {
-#   "fields_to_not_report": {
-#     ItemizedInvoiceCols.CustNum,
-#     # ItemizedInvoiceCols.ItemNum,
-#     # AltriaScanHeaders.SKUCode,
-#   }
-# }
-# ITG_RULES: ModelContextType = {
-#   "fields_to_not_report": {
-#     ItemizedInvoiceCols.CustNum,
-#     ItemizedInvoiceCols.ItemNum,
-#   }
-# }
+ALT_FTX_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"FTXAltScanErrors_{shifted_alt_end_date:%Y%m%d}.csv"
+RJR_FTX_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"FTXRJRScanErrors_{shifted_rjr_end_date:%Y%m%d}.csv"
+ITG_FTX_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"FTXITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
 
 
 def apply_rjr_validation(
@@ -134,7 +112,7 @@ def apply_rjr_validation(
     new_rows=new_rows,
   )
 
-  assemble_validation_error_report(pbar, rjr_errors, RJR_ERR_OUTPUT_FILE)
+  assemble_validation_error_report(pbar, rjr_errors, "RJR", RJR_ERR_OUTPUT_FILE)
 
   rjr_scan = concat(new_rows, axis=1).T
 
@@ -146,24 +124,32 @@ def apply_rjr_validation(
     header=None,
     names=RJRScanHeaders.all_columns(),
     dtype=str,
+    index_col=False,
   )
 
   ftx_df = ftx_df.map(fillnas)
 
-  # ftx_rows = []
+  ftx_rows = []
+  ftx_errs = []
 
-  # ftx_df.apply(
-  #   taskgen_whencalled(
-  #     pbar,
-  #     "Validating FTX RJR scan data",
-  #     len(ftx_df),
-  #   )(apply_model_to_df_transforming)(),
-  #   axis=1,
-  #   new_rows=ftx_rows,
-  #   model=FTXRJRValidationModel,
-  # )
+  ftx_df.apply(
+    taskgen_whencalled(
+      pbar,
+      "Validating FTX RJR scan data",
+      len(ftx_df),
+    )(
+      context_setup(
+        model=FTXRJRValidationModel,
+        errors=ftx_errs,
+      )(apply_model_to_df_transforming)
+    )(),
+    axis=1,
+    new_rows=ftx_rows,
+  )
 
-  # ftx_df = concat(ftx_rows, axis=1).T
+  assemble_validation_error_report(pbar, ftx_errs, "FTX RJR", RJR_FTX_ERR_OUTPUT_FILE)
+
+  ftx_df = concat(ftx_rows, axis=1).T
 
   rjr_df = read_csv(
     StringIO(rjr_scan.to_csv(sep="|", index=False)),
@@ -217,44 +203,52 @@ def apply_altria_validation(
     new_rows=new_rows,
   )
 
-  assemble_validation_error_report(pbar, altria_errors, ALT_ERR_OUTPUT_FILE)
+  assemble_validation_error_report(pbar, altria_errors, "Altria", ALT_ERR_OUTPUT_FILE)
 
   altria_scan = concat(new_rows, axis=1).T
 
   altria_scan = altria_scan[AltriaScanHeaders.all_columns()]
 
-  ftx_input = read_csv(
+  ftx_df = read_csv(
     FTX_ALT_SCAN_FILE_PATH,
     sep="|",
     header=None,
     names=AltriaScanHeaders.all_columns(),
     dtype=str,
+    index_col=False,
   )
 
   # drop summary line from ftx_df
-  ftx_input.drop(index=0, inplace=True)
+  ftx_df.drop(index=0, inplace=True)
 
-  ftx_input = ftx_input.map(fillnas)
+  ftx_df = ftx_df.map(fillnas)
 
-  # ftx_rows = []
+  ftx_rows = []
+  ftx_errs = []
 
-  # ftx_input.apply(
-  #   taskgen_whencalled(
-  #     pbar,
-  #     "Validating FTX Altria scan data",
-  #     len(ftx_input),
-  #   )(apply_model_to_df_transforming)(),
-  #   axis=1,
-  #   new_rows=ftx_rows,
-  #   model=FTXPMUSAValidationModel,
-  # )
+  ftx_df.apply(
+    taskgen_whencalled(
+      pbar,
+      "Validating FTX Altria scan data",
+      len(ftx_df),
+    )(
+      context_setup(
+        model=FTXPMUSAValidationModel,
+        errors=ftx_errs,
+      )(apply_model_to_df_transforming)
+    )(),
+    axis=1,
+    new_rows=ftx_rows,
+  )
 
-  # ftx_df = concat(ftx_rows, axis=1).T
+  assemble_validation_error_report(pbar, ftx_errs, "FTX Altria", ALT_FTX_ERR_OUTPUT_FILE)
 
-  ftx_input[AltriaScanHeaders.QtySold] = ftx_input[AltriaScanHeaders.QtySold].astype(int)
-  ftx_input[AltriaScanHeaders.FinalSalesPrice] = ftx_input[AltriaScanHeaders.FinalSalesPrice].map(decimal_converter)
+  ftx_df = concat(ftx_rows, axis=1).T
 
-  altria_scan_new = concat([altria_scan, ftx_input], ignore_index=True)
+  ftx_df[AltriaScanHeaders.QtySold] = ftx_df[AltriaScanHeaders.QtySold].astype(int)
+  ftx_df[AltriaScanHeaders.FinalSalesPrice] = ftx_df[AltriaScanHeaders.FinalSalesPrice].map(decimal_converter)
+
+  altria_scan_new = concat([altria_scan, ftx_df], ignore_index=True)
 
   stream = StringIO(newline=None)
 
@@ -305,7 +299,7 @@ def apply_itg_validation(
     new_rows=new_rows,
   )
 
-  assemble_validation_error_report(pbar, itg_errors, ITG_ERR_OUTPUT_FILE)
+  assemble_validation_error_report(pbar, itg_errors, "ITG", ITG_ERR_OUTPUT_FILE)
 
   itg_scan = concat(new_rows, axis=1).T
 
@@ -317,24 +311,32 @@ def apply_itg_validation(
     header=None,
     names=ITGScanHeaders.all_columns(),
     dtype=str,
+    index_col=False,
   )
 
   ftx_df = ftx_df.map(fillnas)
 
-  # ftx_rows = []
+  ftx_rows = []
+  ftx_errs = []
 
-  # ftx_df.apply(
-  #   taskgen_whencalled(
-  #     pbar,
-  #     "Validating FTX ITG scan data",
-  #     len(ftx_df),
-  #   )(apply_model_to_df_transforming)(),
-  #   axis=1,
-  #   new_rows=ftx_rows,
-  #   model=FTXITGValidationModel,
-  # )
+  ftx_df.apply(
+    taskgen_whencalled(
+      pbar,
+      "Validating FTX ITG scan data",
+      len(ftx_df),
+    )(
+      context_setup(
+        model=FTXITGValidationModel,
+        errors=ftx_errs,
+      )(apply_model_to_df_transforming)
+    )(),
+    axis=1,
+    new_rows=ftx_rows,
+  )
 
-  # ftx_df = concat(ftx_rows, axis=1).T
+  assemble_validation_error_report(pbar, ftx_errs, "FTX ITG", ITG_FTX_ERR_OUTPUT_FILE)
+
+  ftx_df = concat(ftx_rows, axis=1).T
 
   itg_df = read_csv(
     StringIO(itg_scan.to_csv(sep="|", index=False)),
@@ -344,14 +346,6 @@ def apply_itg_validation(
   )
 
   itg_scan = concat([itg_df, ftx_df], ignore_index=True)
-
-  # itg_scan.rename(
-  #   columns={
-  #     old_col: new_col
-  #     for old_col, new_col in zip(ITGScanHeaders.all_columns(), ITGNamesFinal.all_columns())
-  #   },
-  #   inplace=True,
-  # )
 
   output_path = (
     (ITG_OUTPUT_FOLDER / ITG_SCAN_TEST_FILENAME_FORMAT.format(date=shifted_itg_end_date))

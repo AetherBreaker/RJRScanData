@@ -5,6 +5,7 @@ if __name__ == "__main__":
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from inspect import get_annotations
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, ClassVar, NamedTuple, Self
 
@@ -20,7 +21,6 @@ from pydantic import (
 )
 
 if TYPE_CHECKING:
-  from types_column_names import ColNameEnum, ItemizedInvoiceCols
   from types_custom import ModelContextType
 
 logger = getLogger(__name__)
@@ -40,10 +40,10 @@ class ReportingFieldInfo:
   remove_row_if_error: bool = True
   dont_report_if: Callable[[Any], bool] | None = None
   dont_remove_if: Callable[[Any], bool] | None = None
+  force_remove: bool = False
 
 
 class CustomBaseModel(BaseModel):
-  field_name_lookup: ClassVar[dict["ItemizedInvoiceCols", type["ColNameEnum"]]] = {}  # noqa: F821
   remove_bad_rows: ClassVar[bool] = False
   model_config = ConfigDict(
     populate_by_name=True,
@@ -53,28 +53,29 @@ class CustomBaseModel(BaseModel):
     coerce_numbers_to_str=True,
   )
 
-  @classmethod
-  def lookup_field(cls, field_name: "ColNameEnum") -> str:
-    """Lookup the field name in the _field_name_lookup dictionary."""
-    return cls.field_name_lookup.get(field_name, field_name)
-
   @field_validator("*", mode="wrap", check_fields=False)
   @classmethod
   def log_failed_field_validations(cls, data: str, handler: ValidatorFunctionWrapHandler, info: ValidationInfo) -> Any:
     results = VALIDATION_FAILED_CHECK_CONSTANT
     context: "ModelContextType" = info.context
-    context["remove_row"][info.field_name] = cls.remove_bad_rows
+
+    annos = get_annotations(cls)
+
+    anno = annos[info.field_name]
+
+    reporting_meta: ReportingFieldInfo = (
+      next((item for item in anno.__metadata__ if isinstance(item, ReportingFieldInfo)), ReportingFieldInfo())
+      if anno and hasattr(anno, "__metadata__")
+      else ReportingFieldInfo()
+    )
+
+    context["remove_row"][info.field_name] = cls.remove_bad_rows or reporting_meta.force_remove
 
     try:
       results = handler(data)
       context["remove_row"][info.field_name] = False
     except Exception as e:
       exc_type, exc_val, exc_tb = type(e), e, e.__traceback__
-
-      reporting_meta: ReportingFieldInfo = next(
-        (item for item in cls.__annotations__[info.field_name].__metadata__ if isinstance(item, ReportingFieldInfo)),
-        ReportingFieldInfo(),
-      )
 
       # if the exception is a ValidationError...
       if isinstance(e, ValidationError):
@@ -118,9 +119,9 @@ class CustomBaseModel(BaseModel):
         errs = exc_val.errors()
         for err in errs:
           loc = err["loc"]
-          if loc[0] == "Inv_Price":
+          if loc[0].lower() in ["inv_price", "price"]:
             field_name = "price"
-          elif loc[0] == "Manufacturer_Multipack_Desc":
+          elif loc[0].casefold() == "Manufacturer_Multipack_Desc".casefold():
             field_name = "manufacturer_multipack_desc"
 
       reporting_meta: ReportingFieldInfo = next(

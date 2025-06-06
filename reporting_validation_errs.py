@@ -14,7 +14,10 @@ logger = getLogger(__name__)
 
 
 def assemble_validation_error_report(
-  pbar: Progress, validation_errors: list[RowErrPackage], output_path: Path = Path.cwd()
+  pbar: Progress,
+  validation_errors: list[RowErrPackage],
+  err_type: str,
+  output_path: Path = Path.cwd(),
 ) -> None:
   """
   Assemble a report of validation errors.
@@ -31,7 +34,7 @@ def assemble_validation_error_report(
 
   new_rows = []
 
-  process_errs_task = pbar.add_task("Processing Validation Errors", total=len(validation_errors))
+  process_errs_task = pbar.add_task(f"Processing {err_type} Validation Errors", total=len(validation_errors))
 
   for field_name, field_input, err_reason, row in validation_errors:
     errs = err_reason.errors(
@@ -57,4 +60,4 @@ def assemble_validation_error_report(
 
   result = result[col_names]
 
-  result.to_csv(output_path)
+  result.to_csv(output_path, index=False)

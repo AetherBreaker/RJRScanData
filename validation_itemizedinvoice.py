@@ -12,7 +12,7 @@ from typing import Annotated, Literal, Optional
 from pydantic import AfterValidator, BeforeValidator, Field
 from types_custom import DeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import truncate_decimal
-from validation_config import CustomBaseModel
+from validation_config import CustomBaseModel, ReportingFieldInfo
 from validators_shared import (
   abs_decimal,
   clear_default_custnums,
@@ -45,7 +45,7 @@ class ItemizedInvoiceModel(CustomBaseModel):
   ItemName: Annotated[str, AfterValidator(strip_bad_chars)]
   ItemName_Extra: Optional[str]
   DiffItemName: str
-  Dept_ID: DeptIDsEnum
+  Dept_ID: Annotated[DeptIDsEnum, ReportingFieldInfo(force_remove=True)]
   Unit_Type: Annotated[UnitsOfMeasureEnum, BeforeValidator(validate_unit_type)]
   Unit_Size: int
   DateTime: datetime
@@ -69,9 +69,7 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Store_City: Annotated[Optional[str], Field(alias="City")]
   Store_State: Annotated[Optional[StatesEnum], Field(alias="State")]
   Store_Zip: Annotated[Optional[str], Field(alias="Zip")]
-  Store_Telephone: Annotated[
-    Optional[int], BeforeValidator(strip_string_to_digits), Field(alias="Phone")
-  ]
+  Store_Telephone: Annotated[Optional[int], BeforeValidator(strip_string_to_digits), Field(alias="Phone")]
   Store_ContactName: Optional[str] = None
   Store_ContactEmail: Annotated[Optional[str], Field(alias="Email")]
   Retail_Multipack_Quantity: Optional[int] = None
