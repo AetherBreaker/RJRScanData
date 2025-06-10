@@ -23,9 +23,9 @@ from utils import (
   taskgen_whencalled,
   truncate_decimal,
 )
-from validation_final_alt import AltriaValidationModel, FTXPMUSAValidationModel
-from validation_final_itg import FTXITGValidationModel, ITGValidationModel
-from validation_final_rjr import FTXRJRValidationModel, RJRValidationModel
+from validation_result_alt import AltriaValidationModel, FTXPMUSAValidationModel
+from validation_result_itg import FTXITGValidationModel, ITGValidationModel
+from validation_result_rjr import FTXRJRValidationModel, RJRValidationModel
 
 logger = getLogger(__name__)
 
