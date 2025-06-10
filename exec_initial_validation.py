@@ -5,7 +5,6 @@ from dataframe_transformations import bulk_rate_validation_pass, itemized_inv_fi
 from gsheet_data_processing import SheetCache
 from pandas import concat
 from rich.progress import Progress
-from rich_custom import LiveCustom
 from sql_querying import CUR_WEEK
 from types_column_names import ItemizedInvoiceCols
 from types_custom import BulkDataPackage, BulkRateDataType, ItemizedDataPackage, ItemizedInvoiceDataType, StoreNum

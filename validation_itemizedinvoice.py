@@ -13,13 +13,7 @@ from pydantic import AfterValidator, BeforeValidator, Field
 from types_custom import DeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import truncate_decimal
 from validation_config import CustomBaseModel, ReportingFieldInfo
-from validators_shared import (
-  abs_decimal,
-  clear_default_custnums,
-  map_to_upca,
-  strip_string_to_digits,
-  validate_unit_type,
-)
+from validators_shared import abs_decimal, clear_default_custnums, map_to_upca, strip_string_to_digits, validate_unit_type
 
 logger = getLogger(__name__)
 

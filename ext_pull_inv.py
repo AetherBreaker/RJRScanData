@@ -2,14 +2,9 @@ from logging import getLogger
 
 from logging_config import configure_logging
 from pandas import concat
-from sql_query_builders import (
-  build_inventory_data_query,
-)
+from sql_query_builders import build_inventory_data_query
 from sql_querying import DEFAULT_STORES_LIST, query_all_stores_multithreaded
-from types_custom import (
-  QueryDict,
-  QueryPackage,
-)
+from types_custom import QueryDict, QueryPackage
 from utils import CWD, upce_to_upca
 
 configure_logging()

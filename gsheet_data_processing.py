@@ -15,20 +15,10 @@ from gspread.http_client import BackOffHTTPClient
 from gspread.utils import ValueRenderOption, to_records
 from gspread.worksheet import Worksheet
 from pandas import DataFrame
-from types_column_names import (
-  GSheetsBuydownsCols,
-  GSheetsStoreInfoCols,
-  GSheetsUnitsOfMeasureCols,
-  GSheetsVAPDiscountsCols,
-)
+from types_column_names import GSheetsBuydownsCols, GSheetsStoreInfoCols, GSheetsUnitsOfMeasureCols, GSheetsVAPDiscountsCols
 from types_custom import AddressInfoType, BuydownsDataType, UnitOfMeasureDataType, VAPDataType
 from utils import SingletonType, cached_for_testing
-from validation_gsheetdata import (
-  BuydownsModel,
-  StoreInfoModel,
-  UnitsOfMeasureModel,
-  VAPDiscountsModel,
-)
+from validation_gsheetdata import BuydownsModel, StoreInfoModel, UnitsOfMeasureModel, VAPDiscountsModel
 
 logger = getLogger(__name__)
 
@@ -39,9 +29,7 @@ GOOGLE_CREDENTIALS_PATH = (CWD / __file__).with_name("sft-scan-data-1c4d1707c2d5
 GOOGLE_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
 
-SERVICE_ACCOUNT = service_account(
-  filename=GOOGLE_CREDENTIALS_PATH, scopes=GOOGLE_SCOPES, http_client=BackOffHTTPClient
-)
+SERVICE_ACCOUNT = service_account(filename=GOOGLE_CREDENTIALS_PATH, scopes=GOOGLE_SCOPES, http_client=BackOffHTTPClient)
 
 
 STORE_INFO_SHEET_ID = "178D5UCOlah9OCBn8J51fyLLjLQ0s9hKMVHu43g6UQAc"
@@ -92,18 +80,10 @@ class SheetCache(metaclass=SingletonType):
 
   @cached_for_testing(pickle_path_override="caching_passthru")
   def caching_passthru(self):
-    store_info_sheet = SERVICE_ACCOUNT.open_by_key(STORE_INFO_SHEET_ID).worksheet(
-      STORE_INFO_SHEETNAME
-    )
-    bds_sheet = SERVICE_ACCOUNT.open_by_key(MANUFACTURER_BUYDOWNS_SHEET_ID).worksheet(
-      MANUFACTURER_BUYDOWNS_SHEETNAME
-    )
-    vap_sheet = SERVICE_ACCOUNT.open_by_key(VAP_DISCOUNTS_SHEET_ID).worksheet(
-      VAP_DISCOUNTS_SHEETNAME
-    )
-    uom_sheet = SERVICE_ACCOUNT.open_by_key(UNITS_OF_MEASURE_SHEET_ID).worksheet(
-      UNITS_OF_MEASURE_SHEETNAME
-    )
+    store_info_sheet = SERVICE_ACCOUNT.open_by_key(STORE_INFO_SHEET_ID).worksheet(STORE_INFO_SHEETNAME)
+    bds_sheet = SERVICE_ACCOUNT.open_by_key(MANUFACTURER_BUYDOWNS_SHEET_ID).worksheet(MANUFACTURER_BUYDOWNS_SHEETNAME)
+    vap_sheet = SERVICE_ACCOUNT.open_by_key(VAP_DISCOUNTS_SHEET_ID).worksheet(VAP_DISCOUNTS_SHEETNAME)
+    uom_sheet = SERVICE_ACCOUNT.open_by_key(UNITS_OF_MEASURE_SHEET_ID).worksheet(UNITS_OF_MEASURE_SHEETNAME)
 
     info_table_raw = get_all_records(store_info_sheet, value_render_option="UNFORMATTED_VALUE")
     bds_table_raw = get_all_records(bds_sheet, value_render_option="UNFORMATTED_VALUE")

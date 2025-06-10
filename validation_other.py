@@ -17,4 +17,4 @@ logger = getLogger(__name__)
 class BulkRateModel(CustomBaseModel):
   ItemNum: Annotated[str, BeforeValidator(map_to_upca)]
   Bulk_Price: Decimal
-  Bulk_Quan: Decimal
+  Bulk_Quan: int

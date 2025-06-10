@@ -6,7 +6,7 @@ if __name__ == "__main__":
 from datetime import datetime
 from decimal import Decimal
 from logging import getLogger
-from typing import ClassVar, Optional
+from typing import ClassVar, Literal, Optional
 
 from pydantic import AfterValidator, AliasChoices, BeforeValidator, Field, ValidationInfo, computed_field, field_validator
 from types_custom import PromoFlag, StatesEnum, StoreNum, UnitsOfMeasureEnum
@@ -176,7 +176,7 @@ class RJRValidationModel(CustomBaseModel):
     )
 
 
-class FTXRJRValidationModel(RJRValidationModel):
+class FTXRJRValidationModel(CustomBaseModel):
   """FTX RJR Validation Model."""
 
   outlet_number: Annotated[StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"))]
@@ -215,6 +215,8 @@ class FTXRJRValidationModel(RJRValidationModel):
   ]
   upc_description: Annotated[str, Field(alias="ItemName")]
   unit_of_measure: Annotated[UnitsOfMeasureEnum, BeforeValidator(validate_unit_type), Field(alias="Unit_Type")]
+  promotion_flag: Literal["Y", "N"]
+  outlet_multipack_flag: Literal["Y", "N"]
   outlet_multipack_quantity: Annotated[Annotated[int, Field(ge=0)] | None, Field(alias="Retail_Multipack_Quantity")] = None
   outlet_multipack_discount_amt: Annotated[
     Annotated[Decimal, AfterValidator(truncate_decimal), Field(ge=0, le=30)] | None,
@@ -233,6 +235,7 @@ class FTXRJRValidationModel(RJRValidationModel):
     Annotated[Decimal, AfterValidator(truncate_decimal), Field(ge=0, le=30)] | None,
     Field(alias="PID_Coupon_Discount_Amt"),
   ] = None
+  manufacturer_multipack_flag: Literal["Y", "N"]
   manufacturer_multipack_quantity: Annotated[
     Annotated[int, Field(ge=0)] | None,
     Field(alias=AliasChoices("Manufacturer_Multipack_Quantity", "Altria_Manufacturer_Multipack_Quantity")),
@@ -249,9 +252,7 @@ class FTXRJRValidationModel(RJRValidationModel):
   ] = None
   manufacturer_multipack_desc: Annotated[Optional[str], Field(alias="Manufacturer_Multipack_Desc")] = None
   account_loyalty_id_number: Annotated[
-    Annotated[str, Field(pattern=r"^[0-9a-zA-Z]*$")] | None,
-    Field(alias="CustNum"),
-    ReportingFieldInfo(report_field=False),
+    Annotated[str, Field(pattern=r"^[0-9a-zA-Z]*$")] | None, Field(alias="CustNum"), ReportingFieldInfo(report_field=False)
   ] = None
   coupon_desc: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
 
@@ -281,40 +282,3 @@ class FTXRJRValidationModel(RJRValidationModel):
   @property
   def outlet_name(self) -> str:
     return "Sweet Fire Tobacco Inc."
-
-  @computed_field
-  @property
-  def promotion_flag(self) -> PromoFlag:
-    # Y if any of the following attributes are not None
-    promo_flags = [
-      self.outlet_multipack_flag,
-      self.manufacturer_multipack_flag,
-    ]
-    promo_fields = [
-      self.outlet_multipack_quantity,
-      self.outlet_multipack_discount_amt,
-      self.acct_promo_name,
-      self.acct_discount_amt,
-      self.manufacturer_discount_amt,
-      self.pid_coupon,
-      self.pid_coupon_discount_amt,
-      self.manufacturer_multipack_quantity,
-      self.manufacturer_multipack_discount_amt,
-      self.manufacturer_promo_desc,
-      self.manufacturer_multipack_desc,
-      self.coupon_desc,
-    ]
-
-    return "Y" if "Y" in promo_flags or any(field is not None for field in promo_fields) else "N"
-
-  @computed_field
-  @property
-  def outlet_multipack_flag(self) -> PromoFlag:
-    return "Y" if self.outlet_multipack_quantity is not None or self.outlet_multipack_discount_amt is not None else "N"
-
-  @computed_field
-  @property
-  def manufacturer_multipack_flag(self) -> PromoFlag:
-    return (
-      "Y" if self.manufacturer_multipack_quantity is not None or self.manufacturer_multipack_discount_amt is not None else "N"
-    )

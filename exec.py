@@ -1,29 +1,15 @@
 from logging import getLogger
 
 from config import SETTINGS
-from exec_final_validation import (
-  apply_altria_validation,
-  apply_itg_validation,
-  apply_rjr_validation,
-)
+from exec_final_validation import apply_altria_validation, apply_itg_validation, apply_rjr_validation
 from exec_initial_validation import process_promo_data, validate_and_concat_itemized, validate_bulk
 from gsheet_data_processing import SheetCache
 from logging_config import RICH_CONSOLE, configure_logging
 from rich_custom import LiveCustom
 from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
 from sql_querying import DEFAULT_STORES_LIST, query_all_stores_multithreaded
-from types_column_names import (
-  BulkRateCols,
-  GSheetsUnitsOfMeasureCols,
-  ItemizedInvoiceCols,
-)
-from types_custom import (
-  BulkRateDataType,
-  ItemizedInvoiceDataType,
-  QueryDict,
-  QueryPackage,
-  StoreNum,
-)
+from types_column_names import BulkRateCols, GSheetsUnitsOfMeasureCols, ItemizedInvoiceCols
+from types_custom import BulkRateDataType, ItemizedInvoiceDataType, QueryDict, QueryPackage, StoreNum
 from utils import CWD, get_full_dates
 
 configure_logging()
@@ -121,15 +107,15 @@ with LiveCustom(
   rjr_item_lines = base_item_lines.copy(deep=True)
   itg_item_lines = base_item_lines.copy(deep=True)
 
-  # apply_altria_validation(
-  #   pbar=pbar,
-  #   input_data=altria_item_lines,
-  # )
+  apply_altria_validation(
+    pbar=pbar,
+    input_data=altria_item_lines,
+  )
   apply_rjr_validation(
     pbar=pbar,
     input_data=rjr_item_lines,
   )
-  # apply_itg_validation(
-  #   pbar=pbar,
-  #   input_data=itg_item_lines,
-  # )
+  apply_itg_validation(
+    pbar=pbar,
+    input_data=itg_item_lines,
+  )

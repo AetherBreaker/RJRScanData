@@ -5,20 +5,10 @@ from exec_initial_validation import validate_and_concat_itemized
 from logging_config import RICH_CONSOLE, configure_logging
 from pandas import DataFrame, concat
 from rich_custom import LiveCustom
-from sql_query_builders import (
-  build_employee_info_query,
-  build_itemized_invoice_query,
-)
+from sql_query_builders import build_employee_info_query, build_itemized_invoice_query
 from sql_querying import query_all_stores_multithreaded
-from types_column_names import (
-  ItemizedInvoiceCols,
-)
-from types_custom import (
-  ItemizedInvoiceDataType,
-  QueryDict,
-  QueryPackage,
-  StoreNum,
-)
+from types_column_names import ItemizedInvoiceCols
+from types_custom import ItemizedInvoiceDataType, QueryDict, QueryPackage, StoreNum
 from utils import CWD, rjr_start_end_dates, taskgen_whencalled
 
 configure_logging()
@@ -50,11 +40,11 @@ DEFAULT_STORES_LIST = [
   # 1,
   2,
   3,
-  4,
+  # 4,
   5,
   6,
   7,
-  8,
+  # 8,
   9,
   10,
   11,

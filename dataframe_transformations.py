@@ -386,7 +386,7 @@ def apply_model_to_df_transforming(
   :return: The transformed row.
   """
 
-  # if context["input"].get(ItemizedInvoiceCols.Invoice_Number) in ["105996", 105996]:
+  # if context["input"].get("market_basket_id") in ["1018307", 1018307]:
   #   pass
 
   # context["skip_fields"].update()
