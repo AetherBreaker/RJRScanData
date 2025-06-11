@@ -106,7 +106,7 @@ class CustomBaseModel(BaseModel):
   def log_failed_validation(cls, data: Any, handler: ModelWrapValidatorHandler[Self], info: ValidationInfo) -> Self:
     results = VALIDATION_FAILED_CHECK_CONSTANT
     context: "ModelContextType" = info.context
-    context["remove_row"][info.field_name] = cls.remove_bad_rows
+    # context["remove_row"][info.field_name] = cls.remove_bad_rows
 
     try:
       results = handler(data)
@@ -119,10 +119,13 @@ class CustomBaseModel(BaseModel):
         errs = exc_val.errors()
         for err in errs:
           loc = err["loc"]
-          if loc[0].lower() in ["inv_price", "price"]:
-            field_name = "price"
-          elif loc[0].casefold() == "Manufacturer_Multipack_Desc".casefold():
-            field_name = "manufacturer_multipack_desc"
+          match loc[0].lower():
+            case "inv_price" | "price":
+              field_name = "price"
+            case "manufacturer_multipack_desc":
+              field_name = "manufacturer_multipack_desc"
+            case "pid_coupon_discount_amt":
+              field_name = "LoyaltyDiscountAmt"
 
       reporting_meta: ReportingFieldInfo = next(
         (item for item in cls.__annotations__[field_name].__metadata__ if isinstance(item, ReportingFieldInfo)),
@@ -130,11 +133,12 @@ class CustomBaseModel(BaseModel):
       )
 
       # if the exception is a ValidationError...
-      if isinstance(e, ValidationError):
+      if isinstance(e, ValidationError) and field_name:
+        context["remove_row"][info.field_name] = cls.remove_bad_rows or reporting_meta.force_remove
         dont_report_if_func = reporting_meta.dont_report_if
         report_if = reporting_meta.report_field or not dont_report_if_func if dont_report_if_func else reporting_meta.report_field
         if report_if:
-          context["row_err"][info.field_name] = ValidationErrPackage(field_value=data, err=e)
+          context["row_err"][info.field_name] = ValidationErrPackage(field_value=None, err=e)
 
         if context["remove_row"]:
           dont_remove_check_func = reporting_meta.dont_remove_if

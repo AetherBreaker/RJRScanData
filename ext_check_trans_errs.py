@@ -2,6 +2,7 @@ from logging import getLogger
 
 from config import SETTINGS
 from exec_initial_validation import validate_and_concat_itemized
+from init_constants import CWD
 from logging_config import RICH_CONSOLE, configure_logging
 from pandas import DataFrame, concat
 from rich_custom import LiveCustom
@@ -9,7 +10,7 @@ from sql_query_builders import build_employee_info_query, build_itemized_invoice
 from sql_querying import query_all_stores_multithreaded
 from types_column_names import ItemizedInvoiceCols
 from types_custom import ItemizedInvoiceDataType, QueryDict, QueryPackage, StoreNum
-from utils import CWD, rjr_start_end_dates, taskgen_whencalled
+from utils import rjr_start_end_dates, taskgen_whencalled
 
 configure_logging()
 
@@ -159,7 +160,7 @@ with LiveCustom(
     inplace=True,
   )
 
-  item_lines.to_csv("item_lines.csv", index=False)
+  # item_lines.to_csv("item_lines.csv", index=False)
 
   ocurrences = []
 

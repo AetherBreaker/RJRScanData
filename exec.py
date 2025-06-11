@@ -1,18 +1,22 @@
+if __name__ == "__main__":
+  from logging_config import configure_logging
+
+  configure_logging()
+
 from logging import getLogger
 
 from config import SETTINGS
 from exec_final_validation import apply_altria_validation, apply_itg_validation, apply_rjr_validation
 from exec_initial_validation import process_promo_data, validate_and_concat_itemized, validate_bulk
 from gsheet_data_processing import SheetCache
+from init_constants import PRECOMBINATION_ITEM_LINES_FOLDER
 from logging_config import RICH_CONSOLE, configure_logging
 from rich_custom import LiveCustom
 from sql_query_builders import build_bulk_info_query, build_itemized_invoice_query
 from sql_querying import DEFAULT_STORES_LIST, query_all_stores_multithreaded
 from types_column_names import BulkRateCols, GSheetsUnitsOfMeasureCols, ItemizedInvoiceCols
 from types_custom import BulkRateDataType, ItemizedInvoiceDataType, QueryDict, QueryPackage, StoreNum
-from utils import CWD, get_full_dates
-
-configure_logging()
+from utils import get_full_dates
 
 logger = getLogger(__name__)
 
@@ -39,8 +43,6 @@ vap_data = sheet_data.vap
 itemized: dict[StoreNum, ItemizedInvoiceDataType] = queries_result["invoices"]
 bulk: dict[StoreNum, BulkRateDataType] = queries_result["bulk_rates"]
 
-PRECOMBINATION_ITEM_LINES_FOLDER = CWD / "item_lines"
-PRECOMBINATION_ITEM_LINES_FOLDER.mkdir(exist_ok=True)
 
 for storenum, invoices in itemized.items():
   sorted_invoices = invoices.sort_values(ItemizedInvoiceCols.Invoice_Number)

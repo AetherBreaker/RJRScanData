@@ -187,7 +187,8 @@ class FTXRJRValidationModel(CustomBaseModel):
   zip: Annotated[str, Field(alias="Store_Zip")]
   transaction_date: Annotated[datetime, Field(alias="DateTime")]
   market_basket_id: Annotated[int, Field(alias="Invoice_Number")]
-  scan_id: Annotated[int, Field(alias="LineNum")]
+  # scan_id: Annotated[int, Field(alias="LineNum")]
+  scan_id: Annotated[str, Field(alias="LineNum")]
   register_id: Annotated[int, Field(alias="Station_ID")]
   quantity: Annotated[
     int,

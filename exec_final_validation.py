@@ -3,19 +3,40 @@ if __name__ == "__main__":
 
   configure_logging()
 
-from datetime import datetime, timedelta
 from io import StringIO
 from logging import getLogger
 
 from config import SETTINGS
 from dataframe_transformations import apply_model_to_df_transforming, context_setup
 from dataframe_utils import fillnas
+from init_constants import (
+  ALT_ERR_OUTPUT_FILE,
+  ALT_FTX_ERR_OUTPUT_FILE,
+  ALT_SCAN_FILE_PATH,
+  ALTRIA_LOYALTY_TOTALS_FILE,
+  ALTRIA_MULTIUNIT_TOTALS_FILE,
+  FTX_ALT_SCAN_FILE_PATH,
+  FTX_ITG_SCAN_FILE_PATH,
+  FTX_RJR_SCAN_FILE_PATH,
+  ITG_ERR_OUTPUT_FILE,
+  ITG_FTX_ERR_OUTPUT_FILE,
+  ITG_SCAN_FILE_PATH,
+  RJR_ERR_OUTPUT_FILE,
+  RJR_FTX_ERR_OUTPUT_FILE,
+  RJR_SCAN_FILE_PATH,
+)
 from pandas import DataFrame, concat, read_csv
 from reporting_validation_errs import assemble_validation_error_report
 from rich.progress import Progress
-from types_column_names import AltriaScanHeaders, ItemizedInvoiceCols, ITGScanHeaders, RJRNamesFinal, RJRScanHeaders
+from types_column_names import (
+  AltriaScanHeaders,
+  ItemizedInvoiceCols,
+  ITGNamesFinal,
+  ITGScanHeaders,
+  RJRNamesFinal,
+  RJRScanHeaders,
+)
 from utils import (
-  CWD,
   alt_start_end_dates,
   decimal_converter,
   itg_start_end_dates,
@@ -30,55 +51,11 @@ from validation_result_rjr import FTXRJRValidationModel, RJRValidationModel
 logger = getLogger(__name__)
 
 
-RJR_SCAN_FILENAME_FORMAT = "B56192_{datetime:%Y%m%d_%H%M}_SWEETFIRETOBACCO.txt"
-ALT_SCAN_FILENAME_FORMAT = "SweetFireTobacco{date:%Y%m%d}.txt"
-ITG_SCAN_MAIN_FILENAME_FORMAT = "SweetFireTobacco{date:%m%d%Y}.csv"
-ITG_SCAN_TEST_FILENAME_FORMAT = "SweetFireTobacco{date:%m%d%Y}_TEST.csv"
-
 # Monday - Sunday
 rjr_scan_start_date, rjr_scan_end_date = rjr_start_end_dates(SETTINGS.week_shift)
 itg_scan_start_date, itg_scan_end_date = itg_start_end_dates(SETTINGS.week_shift)
 # Sunday - Saturday
 altria_scan_start_date, altria_scan_end_date = alt_start_end_dates(SETTINGS.week_shift)
-
-shifted_rjr_end_date = rjr_scan_end_date - timedelta(days=1)
-shifted_alt_end_date = altria_scan_end_date - timedelta(days=1)
-shifted_itg_end_date = itg_scan_end_date - timedelta(days=1)
-
-
-RJR_OUTPUT_FOLDER = CWD / "Output RJR Scan Data"
-ALT_OUTPUT_FOLDER = CWD / "Output Altria Scan Data"
-ITG_OUTPUT_FOLDER = CWD / "Output ITG Scan Data"
-
-rjr_res_folder = RJR_OUTPUT_FOLDER / "New" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
-rjr_sub_folder = RJR_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_rjr_end_date:%m-%d-%y}"
-alt_sub_folder = ALT_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_alt_end_date:%m-%d-%y}"
-itg_sub_folder = ITG_OUTPUT_FOLDER / "submissions" / f"Week Ending {shifted_itg_end_date:%m-%d-%y}"
-
-rjr_res_folder.mkdir(exist_ok=True, parents=True)
-rjr_sub_folder.mkdir(exist_ok=True, parents=True)
-alt_sub_folder.mkdir(exist_ok=True, parents=True)
-itg_sub_folder.mkdir(exist_ok=True, parents=True)
-
-
-FTX_SCANDATA_INPUT_FOLDER = CWD / "Input FTX Scan Data"
-FTX_SCANDATA_INPUT_FOLDER.mkdir(exist_ok=True)
-
-FTX_RJR_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_rjr_{shifted_rjr_end_date:%Y%m%d}.dat"
-FTX_ALT_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_alt_{shifted_alt_end_date:%Y%m%d}.txt"
-FTX_ITG_SCAN_FILE_PATH = FTX_SCANDATA_INPUT_FOLDER / f"ftx_itg_{shifted_itg_end_date:%Y%m%d}.txt"
-
-
-ERR_OUTPUT_FOLDER = CWD / "Validation Errors Output"
-ERR_OUTPUT_FOLDER.mkdir(exist_ok=True)
-
-ALT_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"ALTScanErrors_{shifted_alt_end_date:%Y%m%d}.csv"
-RJR_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"RJRScanErrors_{shifted_rjr_end_date:%Y%m%d}.csv"
-ITG_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"ITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
-
-ALT_FTX_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"FTXAltScanErrors_{shifted_alt_end_date:%Y%m%d}.csv"
-RJR_FTX_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"FTXRJRScanErrors_{shifted_rjr_end_date:%Y%m%d}.csv"
-ITG_FTX_ERR_OUTPUT_FILE = ERR_OUTPUT_FOLDER / f"FTXITGScanErrors_{shifted_itg_end_date:%Y%m%d}.csv"
 
 
 def apply_rjr_validation(
@@ -165,12 +142,7 @@ def apply_rjr_validation(
     inplace=True,
   )
 
-  now = datetime.now()
-  rjr_scan.to_csv(
-    (rjr_res_folder / RJR_SCAN_FILENAME_FORMAT.format(datetime=now)),
-    sep="|",
-    index=False,
-  )
+  rjr_scan.to_csv(RJR_SCAN_FILE_PATH, sep="|", index=False)
 
 
 def apply_altria_validation(
@@ -208,6 +180,14 @@ def apply_altria_validation(
   altria_scan = concat(new_rows, axis=1).T
 
   altria_scan = altria_scan[AltriaScanHeaders.all_columns()]
+
+  loyalty_sum = altria_scan[AltriaScanHeaders.LoyaltyDiscountAmt].sum()
+  multipack_sum = altria_scan[AltriaScanHeaders.TotalMultiUnitDiscountAmt].sum()
+
+  with ALTRIA_LOYALTY_TOTALS_FILE.open("w") as loyalty_file:
+    loyalty_file.write(f"Total Loyalty Discount Amount: {truncate_decimal(loyalty_sum)}\n")
+  with ALTRIA_MULTIUNIT_TOTALS_FILE.open("w") as multipack_file:
+    multipack_file.write(f"Total Multi-Unit Discount Amount: {truncate_decimal(multipack_sum)}\n")
 
   ftx_df = read_csv(
     FTX_ALT_SCAN_FILE_PATH,
@@ -265,7 +245,7 @@ def apply_altria_validation(
 
   altria_scan_new.to_csv(stream, sep="|", index=False, header=False)
 
-  with (ALT_OUTPUT_FOLDER / ALT_SCAN_FILENAME_FORMAT.format(date=shifted_alt_end_date)).open("w") as f:
+  with ALT_SCAN_FILE_PATH.open("w") as f:
     f.write(stream.getvalue())
 
 
@@ -290,7 +270,8 @@ def apply_itg_validation(
       len(input_data),
     )(
       context_setup(
-        model=ITGValidationModel,
+        # model=ITGValidationModel,
+        model=RJRValidationModel,
         # xtra_rules=ITG_RULES,
         errors=itg_errors,
       )(apply_model_to_df_transforming)
@@ -326,7 +307,8 @@ def apply_itg_validation(
       len(ftx_df),
     )(
       context_setup(
-        model=FTXITGValidationModel,
+        # model=FTXITGValidationModel,
+        model=FTXRJRValidationModel,
         errors=ftx_errs,
       )(apply_model_to_df_transforming)
     )(),
@@ -347,10 +329,9 @@ def apply_itg_validation(
 
   itg_scan = concat([itg_df, ftx_df], ignore_index=True)
 
-  output_path = (
-    (ITG_OUTPUT_FOLDER / ITG_SCAN_TEST_FILENAME_FORMAT.format(date=shifted_itg_end_date))
-    if SETTINGS.test_file
-    else (ITG_OUTPUT_FOLDER / ITG_SCAN_MAIN_FILENAME_FORMAT.format(date=shifted_itg_end_date))
+  itg_scan.rename(
+    columns={old_col: new_col for old_col, new_col in zip(ITGScanHeaders.all_columns(), ITGNamesFinal.all_columns())},
+    inplace=True,
   )
 
-  itg_scan.to_csv(output_path, sep="|", index=False)
+  itg_scan.to_csv(ITG_SCAN_FILE_PATH, sep="|", index=False, header=True,)

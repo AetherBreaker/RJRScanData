@@ -17,7 +17,7 @@ def assemble_validation_error_report(
   pbar: Progress,
   validation_errors: list[RowErrPackage],
   err_type: str,
-  output_path: Path = Path.cwd(),
+  output_path: Path,
 ) -> None:
   """
   Assemble a report of validation errors.
@@ -28,6 +28,8 @@ def assemble_validation_error_report(
   Returns:
       str: A formatted string containing the validation error report.
   """
+  if output_path.exists():
+    output_path.unlink()
   if not validation_errors:
     logger.info("No validation errors found.")
     return

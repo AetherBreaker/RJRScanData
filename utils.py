@@ -1,4 +1,5 @@
 import contextlib
+from pathlib import Path
 
 if __name__ == "__main__":
   from logging_config import configure_logging
@@ -16,7 +17,6 @@ from io import BufferedWriter
 from json import load
 from logging import getLogger
 from os import get_terminal_size
-from pathlib import Path
 from re import match
 from threading import Lock
 from typing import Any
@@ -27,9 +27,10 @@ from numpy import nan
 from rich.progress import Progress, TaskID
 from types_custom import StoreNum
 
-logger = getLogger(__name__)
-
 CWD = Path.cwd()
+
+
+logger = getLogger(__name__)
 
 FTP_CREDS_FILE = (CWD / __file__).with_name("ftp_creds.json")
 

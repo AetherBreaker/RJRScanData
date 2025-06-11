@@ -1,16 +1,30 @@
+if __name__ == "__main__":
+  from logging_config import configure_logging
+
+  configure_logging()
+
 from concurrent.futures import Future, ThreadPoolExecutor
+from logging import getLogger
 from typing import Annotated, Callable
 
+from config import SETTINGS
 from dataframe_transformations import bulk_rate_validation_pass, itemized_inv_first_validation_pass, process_item_lines
 from gsheet_data_processing import SheetCache
-from pandas import concat
+from pandas import DatetimeIndex, concat, date_range, to_datetime
 from rich.progress import Progress
 from sql_querying import CUR_WEEK
 from types_column_names import ItemizedInvoiceCols
 from types_custom import BulkDataPackage, BulkRateDataType, ItemizedDataPackage, ItemizedInvoiceDataType, StoreNum
-from utils import cached_for_testing, taskgen_whencalled
+from utils import cached_for_testing, get_full_dates, taskgen_whencalled
+
+logger = getLogger(__name__)
+
 
 addr_data = SheetCache().info
+
+start_date, end_date = get_full_dates(SETTINGS.week_shift)
+
+EXPECTED_TRANSACTION_DATES = date_range(start=start_date, end=end_date, freq="D", inclusive="left")
 
 
 def validate_and_concat_itemized(
@@ -28,6 +42,18 @@ def validate_and_concat_itemized(
     if isinstance(result, int):
       empty.append(result)
       return
+
+    store_datetimes: DatetimeIndex = DatetimeIndex(
+      to_datetime(result.itemized_invoice_data[ItemizedInvoiceCols.DateTime])
+    ).normalize()
+    test = store_datetimes.difference(EXPECTED_TRANSACTION_DATES)
+    if not test.empty:
+      logger.warning(
+        f"Store {result.storenum} is missing expected transaction dates or has transaction dates outside the expected window.\n"
+        f"{"\n".join(str(stamp) for stamp in test.tolist())}\n"
+        "This may indicate corrupted transaction data."
+      )
+
     itemized_invoice_results.append(result.itemized_invoice_data)
     pbar.update(first_validation_task, advance=1)
     remaining_pbar(result.storenum)

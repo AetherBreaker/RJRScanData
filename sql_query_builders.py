@@ -5,14 +5,10 @@ if __name__ == "__main__":
 
 from datetime import date, datetime
 from logging import getLogger
-from pathlib import Path
 
 from pypika.queries import Database, Query, QueryBuilder, Schema, Table
 
 logger = getLogger(__name__)
-
-
-CWD = Path.cwd()
 
 
 _DATABASE_CRESQL = Database("cresql")
@@ -31,9 +27,7 @@ def update_database_name(new_db_name: str) -> None:
     _schema._parent = Database(new_db_name)
 
 
-def build_itemized_invoice_query(
-  start_date: date | datetime, end_date: date | datetime
-) -> QueryBuilder:
+def build_itemized_invoice_query(start_date: date | datetime, end_date: date | datetime) -> QueryBuilder:
   """Build a query to retrieve itemized invoices between two dates.
 
   :param start_date: Start date to filter invoices. Inclusive
@@ -223,9 +217,7 @@ def build_inventory_data_query() -> QueryBuilder:
   )
 
 
-def build_volume_report_query(
-  start_date: date | datetime, end_date: date | datetime
-) -> QueryBuilder:
+def build_volume_report_query(start_date: date | datetime, end_date: date | datetime) -> QueryBuilder:
   """Build a query to retrieve itemized invoices between two dates.
 
   :param start_date: Start date to filter invoices. Inclusive

@@ -10,8 +10,18 @@ from logging import getLogger
 from typing import Annotated, ClassVar, Literal, Optional
 
 from dateutil.relativedelta import SA, relativedelta
-from pydantic import AfterValidator, AliasChoices, BeforeValidator, Field, SkipValidation, computed_field, field_serializer
-from types_custom import AltriaDeptsEnum, FTXDeptIDsEnum, StatesEnum, StoreNum, UnitsOfMeasureEnum
+from pydantic import (
+  AfterValidator,
+  AliasChoices,
+  BeforeValidator,
+  Field,
+  SkipValidation,
+  ValidationInfo,
+  computed_field,
+  field_serializer,
+  field_validator,
+)
+from types_custom import AltriaDeptsEnum, FTXDeptIDsEnum, ModelContextType, StatesEnum, StoreNum, UnitsOfMeasureEnum
 from utils import is_not_integer, truncate_decimal
 from validation_config import CustomBaseModel, ReportingFieldInfo
 from validators_shared import pad_to_length, validate_ean, validate_unit_type, validate_upc_checkdigit
@@ -102,7 +112,6 @@ class AltriaValidationModel(CustomBaseModel):
   OtherManufacturerDiscountName: Optional[str] = None
   OtherManufacturerDiscountAmt: Optional[Decimal] = None
   LoyaltyDiscountName: Annotated[Optional[str], Field(alias="loyalty_disc_desc")] = None
-  LoyaltyDiscountAmt: Annotated[Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt")] = None
   StoreTelephone: Annotated[Optional[int], Field(alias="Store_Telephone")]
   StoreContactName: Optional[str] = None
   StoreContactEmail: Annotated[Optional[str], Field(alias="Store_ContactEmail")]
@@ -111,7 +120,7 @@ class AltriaValidationModel(CustomBaseModel):
   LoyaltyIDNumber: Annotated[
     Optional[str],
     Field(pattern=r"^[0-9a-zA-Z]*$", alias="CustNum"),
-    ReportingFieldInfo(report_field=False),
+    ReportingFieldInfo(report_field=False, remove_row_if_error=False),
   ] = None
   AdultTobConsumerPhoneNum: Annotated[Optional[str], BeforeValidator(truncate_phonenum), Field(alias="Phone_1")] = None
   AgeValidationMethod: Annotated[Optional[str], AfterValidator(map_age_validation_method), Field(alias="AgeVerificationMethod")]
@@ -121,6 +130,7 @@ class AltriaValidationModel(CustomBaseModel):
   ReservedField43: Optional[str] = None
   ReservedField44: Optional[str] = None
   ReservedField45: Optional[str] = None
+  LoyaltyDiscountAmt: Annotated[Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt")] = None
 
   DateTime: Annotated[Optional[datetime], Field(alias="DateTime", exclude=True)]
   Price_at_sale: Annotated[
@@ -130,6 +140,16 @@ class AltriaValidationModel(CustomBaseModel):
   ]
 
   remove_bad_rows: ClassVar[bool] = True
+
+  @field_validator("LoyaltyDiscountAmt", mode="after")
+  @classmethod
+  def find_removed_loyalty[InputT: str](cls, input: InputT, info: ValidationInfo) -> InputT:
+    context: ModelContextType = info.context
+
+    if input is not None and any(context["remove_row"].values()):
+      reason_fields = ", ".join(field_name for field_name in context["row_err"].keys())
+      raise ValueError(f"A row with valid loyalty discounts is being removed! Field(s) Causing Removal: [{reason_fields}]")
+    return input
 
   @computed_field
   @property
