@@ -296,6 +296,7 @@ class ItemizedInvoiceCols(ColNameEnum):
   Manufacturer_Buydown_Amt = auto()
   loyalty_disc_desc = auto()
   loyalty_disc_amt = auto()
+  LoyaltyDiscountAmt = auto()
 
 
 class BulkRateCols(ColNameEnum):

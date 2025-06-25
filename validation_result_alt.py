@@ -130,7 +130,7 @@ class AltriaValidationModel(CustomBaseModel):
   ReservedField43: Optional[str] = None
   ReservedField44: Optional[str] = None
   ReservedField45: Optional[str] = None
-  LoyaltyDiscountAmt: Annotated[Optional[Decimal], Field(alias="PID_Coupon_Discount_Amt")] = None
+  LoyaltyDiscountAmt: Annotated[Optional[Decimal], Field(alias="LoyaltyDiscountAmt")] = None
 
   DateTime: Annotated[Optional[datetime], Field(alias="DateTime", exclude=True)]
   Price_at_sale: Annotated[
@@ -205,12 +205,12 @@ class FTXPMUSAValidationModel(CustomBaseModel):
   TransactionDate: Annotated[date, BeforeValidator(fix_date)]
   TransactionTime: time
   TransactionID: int
-  StoreNumber: StoreNum
-  StoreName: str
-  StoreAddress: Optional[str]
-  StoreCity: Optional[str]
-  StoreState: Optional[StatesEnum]
-  StoreZip: Optional[str]
+  StoreNumber: Annotated[StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"))]
+  StoreName: Annotated[str, Field(alias="Store_Name")]
+  StoreAddress: Annotated[Optional[str], Field(alias=AliasChoices("Address", "Store_Address"))]
+  StoreCity: Annotated[Optional[str], Field(alias=AliasChoices("City", "Store_City"))]
+  StoreState: Annotated[Optional[StatesEnum], Field(alias=AliasChoices("State", "Store_State"))]
+  StoreZip: Annotated[Optional[str], Field(alias=AliasChoices("Zip", "Store_Zip"))]
   Category: FTXDeptIDsEnum
   ManufacturerName: Optional[str] = None
   SKUCode: str
@@ -242,9 +242,9 @@ class FTXPMUSAValidationModel(CustomBaseModel):
   LoyaltyDiscountName: Optional[str] = None
   LoyaltyDiscountAmt: Optional[Decimal] = None
   FinalSalesPrice: Decimal
-  StoreTelephone: Optional[int]
+  StoreTelephone: Annotated[Optional[int], Field(alias=AliasChoices("Phone", "Store_Telephone"))]
   StoreContactName: Optional[str] = None
-  StoreContactEmail: Optional[str]
+  StoreContactEmail: Annotated[Optional[str], Field(alias=AliasChoices("Email", "Store_ContactEmail"))]
   ProductGroupingCode: Optional[str] = None
   ProductGroupingName: Optional[str] = None
   LoyaltyIDNumber: Optional[str] = None

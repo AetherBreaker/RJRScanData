@@ -109,15 +109,15 @@ with LiveCustom(
   rjr_item_lines = base_item_lines.copy(deep=True)
   itg_item_lines = base_item_lines.copy(deep=True)
 
-  apply_altria_validation(
-    pbar=pbar,
-    input_data=altria_item_lines,
-  )
+  # apply_altria_validation(
+  #   pbar=pbar,
+  #   input_data=altria_item_lines,
+  # )
   apply_rjr_validation(
     pbar=pbar,
     input_data=rjr_item_lines,
   )
-  apply_itg_validation(
-    pbar=pbar,
-    input_data=itg_item_lines,
-  )
+  # apply_itg_validation(
+  #   pbar=pbar,
+  #   input_data=itg_item_lines,
+  # )

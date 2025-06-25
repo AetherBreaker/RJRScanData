@@ -16,7 +16,15 @@ from dataframe_utils import NULL_VALUES, combine_same_coupons, distribute_discou
 from pandas import DataFrame, Series, concat, isna
 from rich.progress import Progress
 from sql_querying import CUR_WEEK
-from types_column_names import BulkRateCols, GSheetsBuydownsCols, GSheetsVAPDiscountsCols, ItemizedInvoiceCols
+from types_column_names import (
+  AltriaScanHeaders,
+  BulkRateCols,
+  GSheetsBuydownsCols,
+  GSheetsVAPDiscountsCols,
+  ItemizedInvoiceCols,
+  ITGScanHeaders,
+  RJRScanHeaders,
+)
 from types_custom import (
   AddressInfoType,
   BulkDataPackage,
@@ -339,6 +347,12 @@ def context_setup[CTXFuncT: Callable[CTXFuncP, CTXFuncR]](
       # if key storenum in row
       if ItemizedInvoiceCols.Store_Number in row.index:
         update["store_num"] = row[ItemizedInvoiceCols.Store_Number]
+      elif AltriaScanHeaders.StoreNumber in row.index:
+        update["store_num"] = row[AltriaScanHeaders.StoreNumber]
+      elif RJRScanHeaders.outlet_number in row.index:
+        update["store_num"] = row[RJRScanHeaders.outlet_number]
+      elif ITGScanHeaders.outlet_number in row.index:
+        update["store_num"] = row[ITGScanHeaders.outlet_number]
 
       context.update(update)
 
@@ -405,6 +419,9 @@ def apply_model_to_df_transforming(
   # serialize the model to a dict
   model_dict = model.model_dump()
 
+  # if "outlet_number" in model_dict and not isinstance(model_dict.get("outlet_number"), int):
+  #   pass
+
   # create a new Series from the model dict
   new_row = Series(model_dict, name=context["row_id"], dtype=object)
 
@@ -436,6 +453,55 @@ def apply_model_to_df(
   model_dict = model.model_dump()
 
   row.update(model_dict)
+
+  return row
+
+
+def apply_model_to_ftx(
+  context: ModelContextType,
+  row: Series,
+  new_rows: list[Series],
+  model: type[CustomBaseModel],
+  addr_data: AddressInfoType,
+) -> Series:
+  """
+  Apply a model to a row of a DataFrame.
+  This version transforms the dataframe and should be passed an empty list to append new rows to
+  for concatenation.
+
+  :param context: The context to use.
+  :param row: The row to transform.
+  :param new_rows: The list of new rows to append to.
+  :param model: The model to apply.
+  :return: The transformed row.
+  """
+
+  if not (storenum := context.get("store_num")):
+    raise ValueError("Store number is required in the context")
+
+  address_info = addr_data.loc[int(storenum)].to_dict()
+  context["input"].update(address_info)
+
+  # old_addr = context["input"].get(RJRScanHeaders.address_1)
+  # new_addr = address_info["Address"]
+
+  # if new_addr != old_addr:
+  #   pass
+
+  # create a new instance of the model
+  model = model.model_validate(context["input"], context=context)
+
+  if any(context["remove_row"].values()):
+    # if the model is invalid, skip the row
+    return row
+
+  # serialize the model to a dict
+  model_dict = model.model_dump()
+
+  # create a new Series from the model dict
+  new_row = Series(model_dict, name=context["row_id"], dtype=object)
+
+  new_rows.append(new_row)
 
   return row
 
@@ -690,7 +756,10 @@ def calculate_scanned_coupons(group: DataFrame) -> DataFrame:
 
     biggest_coupon_row = group.loc[biggest_coupon_index]
 
-    biggest_coupon_value = biggest_coupon_row[ItemizedInvoiceCols.Inv_Price]
+    if biggest_coupon_row[ItemizedInvoiceCols.ItemNum] in ["EmployeeDisc10", "VeteranDisc10"]:
+      biggest_coupon_value = abs(biggest_coupon_row[ItemizedInvoiceCols.PricePer])
+    else:
+      biggest_coupon_value = biggest_coupon_row[ItemizedInvoiceCols.Inv_Price]
     biggest_coupon_name = biggest_coupon_row[ItemizedInvoiceCols.ItemName]
 
     group.drop(index=coupon_line_indexes, inplace=True)
@@ -866,7 +935,7 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
 
   # invoicenum = group[ItemizedInvoiceCols.Invoice_Number].iloc[0]
 
-  # if invoicenum in [208282, "208282"]:
+  # if invoicenum in [265495, "265495"]:
   #   pass
 
   # grab the dept_id of each row
@@ -925,8 +994,11 @@ def identify_loyalty(group: DataFrame) -> DataFrame:
 
       distributed_discounts = distribute_discount(invoice_applicable_prices, invoice_applicable_quantities, loyalty_coupon_value)
 
+      rjr_discounts = distributed_discounts / invoice_applicable_quantities
+
       group.loc[is_loyalty_applicable, ItemizedInvoiceCols.loyalty_disc_desc] = loyalty_coupon_code
-      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.PID_Coupon_Discount_Amt] = distributed_discounts
+      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.PID_Coupon_Discount_Amt] = rjr_discounts
+      group.loc[is_loyalty_applicable, ItemizedInvoiceCols.LoyaltyDiscountAmt] = distributed_discounts
 
   return group
 

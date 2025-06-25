@@ -7,8 +7,9 @@ from io import StringIO
 from logging import getLogger
 
 from config import SETTINGS
-from dataframe_transformations import apply_model_to_df_transforming, context_setup
+from dataframe_transformations import apply_model_to_df_transforming, apply_model_to_ftx, context_setup
 from dataframe_utils import fillnas
+from gsheet_data_processing import SheetCache
 from init_constants import (
   ALT_ERR_OUTPUT_FILE,
   ALT_FTX_ERR_OUTPUT_FILE,
@@ -45,7 +46,8 @@ from utils import (
   truncate_decimal,
 )
 from validation_result_alt import AltriaValidationModel, FTXPMUSAValidationModel
-from validation_result_itg import FTXITGValidationModel, ITGValidationModel
+
+# from validation_result_itg import FTXITGValidationModel, ITGValidationModel
 from validation_result_rjr import FTXRJRValidationModel, RJRValidationModel
 
 logger = getLogger(__name__)
@@ -56,6 +58,86 @@ rjr_scan_start_date, rjr_scan_end_date = rjr_start_end_dates(SETTINGS.week_shift
 itg_scan_start_date, itg_scan_end_date = itg_start_end_dates(SETTINGS.week_shift)
 # Sunday - Saturday
 altria_scan_start_date, altria_scan_end_date = alt_start_end_dates(SETTINGS.week_shift)
+
+
+STORES_CHECK_LIST = {
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  13,
+  14,
+  15,
+  16,
+  17,
+  18,
+  19,
+  20,
+  21,
+  22,
+  23,
+  24,
+  25,
+  26,
+  27,
+  28,
+  29,
+  30,
+  31,
+  32,
+  34,
+  35,
+  36,
+  37,
+  38,
+  40,
+  42,
+  43,
+  44,
+  45,
+  46,
+  48,
+  49,
+  50,
+  51,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63,
+  64,
+  65,
+  66,
+  67,
+  68,
+  69,
+  70,
+  72,
+  82,
+  83,
+  84,
+  85,
+  86,
+  87,
+  88,
+}
+
+
+addr_data = SheetCache().info
 
 
 def apply_rjr_validation(
@@ -118,24 +200,35 @@ def apply_rjr_validation(
       context_setup(
         model=FTXRJRValidationModel,
         errors=ftx_errs,
-      )(apply_model_to_df_transforming)
+      )(apply_model_to_ftx)
     )(),
     axis=1,
     new_rows=ftx_rows,
+    addr_data=addr_data,
   )
 
   assemble_validation_error_report(pbar, ftx_errs, "FTX RJR", RJR_FTX_ERR_OUTPUT_FILE)
 
   ftx_df = concat(ftx_rows, axis=1).T
 
-  rjr_df = read_csv(
-    StringIO(rjr_scan.to_csv(sep="|", index=False)),
-    sep="|",
-    header=0,
-    dtype=str,
-  )
+  # rjr_df = read_csv(
+  #   StringIO(rjr_scan.to_csv(sep="|", index=False)),
+  #   sep="|",
+  #   header=0,
+  #   dtype=str,
+  # )
 
-  rjr_scan = concat([rjr_df, ftx_df], ignore_index=True)
+  rjr_scan = concat([rjr_scan, ftx_df], ignore_index=True)
+
+  storenums_present = set(rjr_scan[RJRScanHeaders.outlet_number].tolist())
+
+  # logger.info(f)
+
+  if missing_stores := STORES_CHECK_LIST - storenums_present:
+    logger.warning(
+      f"Missing stores in RJR scan data: \n{'\n'.join(map(str, sorted(missing_stores)))}\n"
+      "Please check the data for completeness."
+    )
 
   rjr_scan.rename(
     columns={old_col: new_col for old_col, new_col in zip(RJRScanHeaders.all_columns(), RJRNamesFinal.all_columns())},
@@ -215,10 +308,11 @@ def apply_altria_validation(
       context_setup(
         model=FTXPMUSAValidationModel,
         errors=ftx_errs,
-      )(apply_model_to_df_transforming)
+      )(apply_model_to_ftx)
     )(),
     axis=1,
     new_rows=ftx_rows,
+    addr_data=addr_data,
   )
 
   assemble_validation_error_report(pbar, ftx_errs, "FTX Altria", ALT_FTX_ERR_OUTPUT_FILE)
@@ -229,6 +323,14 @@ def apply_altria_validation(
   ftx_df[AltriaScanHeaders.FinalSalesPrice] = ftx_df[AltriaScanHeaders.FinalSalesPrice].map(decimal_converter)
 
   altria_scan_new = concat([altria_scan, ftx_df], ignore_index=True)
+
+  storenums_present = set(altria_scan_new[AltriaScanHeaders.StoreNumber].tolist())
+
+  if missing_stores := STORES_CHECK_LIST - storenums_present:
+    logger.warning(
+      f"Missing stores in Altria scan data: \n{'\n'.join(map(str, sorted(missing_stores)))}\n"
+      "Please check the data for completeness."
+    )
 
   stream = StringIO(newline=None)
 
@@ -310,28 +412,42 @@ def apply_itg_validation(
         # model=FTXITGValidationModel,
         model=FTXRJRValidationModel,
         errors=ftx_errs,
-      )(apply_model_to_df_transforming)
+      )(apply_model_to_ftx)
     )(),
     axis=1,
     new_rows=ftx_rows,
+    addr_data=addr_data,
   )
 
   assemble_validation_error_report(pbar, ftx_errs, "FTX ITG", ITG_FTX_ERR_OUTPUT_FILE)
 
   ftx_df = concat(ftx_rows, axis=1).T
 
-  itg_df = read_csv(
-    StringIO(itg_scan.to_csv(sep="|", index=False)),
-    sep="|",
-    header=0,
-    dtype=str,
-  )
+  # itg_scan = read_csv(
+  #   StringIO(itg_scan.to_csv(sep="|", index=False)),
+  #   sep="|",
+  #   header=0,
+  #   dtype=str,
+  # )
 
-  itg_scan = concat([itg_df, ftx_df], ignore_index=True)
+  itg_scan = concat([itg_scan, ftx_df], ignore_index=True)
+
+  storenums_present = set(itg_scan[ITGScanHeaders.outlet_number].tolist())
+
+  if missing_stores := STORES_CHECK_LIST - storenums_present:
+    logger.warning(
+      f"Missing stores in ITG scan data: \n{'\n'.join(map(str, sorted(missing_stores)))}\n"
+      "Please check the data for completeness."
+    )
 
   itg_scan.rename(
     columns={old_col: new_col for old_col, new_col in zip(ITGScanHeaders.all_columns(), ITGNamesFinal.all_columns())},
     inplace=True,
   )
 
-  itg_scan.to_csv(ITG_SCAN_FILE_PATH, sep="|", index=False, header=True,)
+  itg_scan.to_csv(
+    ITG_SCAN_FILE_PATH,
+    sep="|",
+    index=False,
+    header=True,
+  )

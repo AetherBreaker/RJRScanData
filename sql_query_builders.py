@@ -6,7 +6,9 @@ if __name__ == "__main__":
 from datetime import date, datetime
 from logging import getLogger
 
+from config import SETTINGS
 from pypika.queries import Database, Query, QueryBuilder, Schema, Table
+from utils import rjr_start_end_dates
 
 logger = getLogger(__name__)
 

@@ -42,9 +42,15 @@ CUR_WEEK = get_week_of(SETTINGS.week_shift)
 
 LAST_USED_DB_QUERYFILE = (CWD / __file__).with_name("last used database name.sql")
 PCA_SQL_CREDS_PATH = (CWD / __file__).with_name("store_sql_creds.json")
+DIRECT_IP_ADDRESS_LOOKUP_JSON = (CWD / __file__).with_name("store_ip_address_lookup.json")
 STORE_SQL_CREDS_OVERRIDE_PATH = CWD / "store_sql_creds_override.json"
 
 SQL_DRIVER_DEFAULT = "{ODBC Driver 18 for SQL Server}"
+
+SQL_HOSTNAME_METHOD_DEFAULT: Literal["DNS", "IP"] = 0
+SQL_HOSTNAME_METHODS = ("DNS", "IP")
+
+TAILSCALE_HOSTNAME_PATTERN = "pos-sft{storenum:0>3}.salamander-nunki.ts.net"
 
 
 class NoConnectionError(Exception):
@@ -61,13 +67,6 @@ def load_sql_creds(sql_driver: str = SQL_DRIVER_DEFAULT) -> SQLCreds:
       creds |= json.load(file)
 
   return creds
-
-
-SQL_HOSTNAME_METHOD_DEFAULT: Literal["DNS", "IP"] = 0
-SQL_HOSTNAME_METHODS = ("DNS", "IP")
-
-TAILSCALE_HOSTNAME_PATTERN = "pos-sft{storenum:0>3}.salamander-nunki.ts.net"
-DIRECT_IP_ADDRESS_LOOKUP_JSON = (CWD / __file__).with_name("store_ip_address_lookup.json")
 
 
 def get_store_sql_hostname(
@@ -199,7 +198,6 @@ class StoreSQLConn:
 _QUERY_THREADING_LOCK = Lock()
 
 
-# @cached_for_testing
 def query_store(storenum: StoreNum, queries: QueryDict) -> QueryResultsPackage:
   static_queries = {}
   results = QueryResultsPackage(storenum=storenum)
@@ -382,20 +380,10 @@ DEFAULT_STORES_LIST = [
 ]
 
 
-# DEFAULT_STORES_LIST = [
-#   44,
-#   59,
-#   66,
-# ]
-
-
 if SETTINGS.testing_stores:
   DEFAULT_STORES_LIST = SETTINGS.testing_stores
 
 
-# @cached_for_testing(
-#   pickle_path_override=f"query_all_stores_multithreaded_bulk_rates_invoices_{str(cur_week.date())}_{"_".join(str(x) for x in DEFAULT_STORES_LIST)}"
-# )
 def query_all_stores_multithreaded[q_name: QueryName](
   queries: dict[q_name, QueryPackage], storenums: list[StoreNum] = DEFAULT_STORES_LIST
 ) -> dict[q_name, dict[StoreNum, DataFrame]]:

@@ -180,14 +180,13 @@ class FTXRJRValidationModel(CustomBaseModel):
   """FTX RJR Validation Model."""
 
   outlet_number: Annotated[StoreNum, Field(alias=AliasChoices("Store_ID", "Store_Number"))]
-  address_1: Annotated[str, Field(alias="Store_Address")]
-  address_2: Annotated[Optional[str], Field(alias="Store_Address2")] = None
-  city: Annotated[str, Field(alias="Store_City")]
-  state: Annotated[StatesEnum, Field(alias="Store_State")]
-  zip: Annotated[str, Field(alias="Store_Zip")]
+  address_1: Annotated[str, Field(alias=AliasChoices("Address", "Store_Address"))]
+  address_2: Annotated[Optional[str], Field(alias=AliasChoices("Store_Address2"))] = None
+  city: Annotated[str, Field(alias=AliasChoices("City", "Store_City"))]
+  state: Annotated[StatesEnum, Field(alias=AliasChoices("State", "Store_State"))]
+  zip: Annotated[str, Field(alias=AliasChoices("Zip", "Store_Zip"))]
   transaction_date: Annotated[datetime, Field(alias="DateTime")]
   market_basket_id: Annotated[int, Field(alias="Invoice_Number")]
-  # scan_id: Annotated[int, Field(alias="LineNum")]
   scan_id: Annotated[str, Field(alias="LineNum")]
   register_id: Annotated[int, Field(alias="Station_ID")]
   quantity: Annotated[

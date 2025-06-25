@@ -21,8 +21,8 @@ PRECOMBINATION_ITEM_LINES_FOLDER.mkdir(exist_ok=True)
 
 RJR_SCAN_FILENAME_FORMAT = "B56192_{datetime:%Y%m%d_%H%M}_SWEETFIRETOBACCO.txt"
 ALT_SCAN_FILENAME_FORMAT = "SweetFireTobacco{date:%Y%m%d}.txt"
-ITG_SCAN_MAIN_FILENAME_FORMAT = "SweetFireTobacco{date:%m%d%Y}.csv"
-ITG_SCAN_TEST_FILENAME_FORMAT = "SweetFireTobacco{date:%m%d%Y}_TEST.csv"
+ITG_SCAN_MAIN_FILENAME_FORMAT = "SweetFireTobacco_{date:%m%d%Y}.csv"
+ITG_SCAN_TEST_FILENAME_FORMAT = "SweetFireTobacco_{date:%m%d%Y}_TEST.csv"
 
 
 # Monday - Sunday

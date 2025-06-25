@@ -82,3 +82,4 @@ class ItemizedInvoiceModel(CustomBaseModel):
   Manufacturer_Buydown_Desc: Optional[str] = None
   Manufacturer_Buydown_Amt: Optional[Decimal] = None
   loyalty_disc_desc: Optional[str] = None
+  LoyaltyDiscountAmt: Optional[Decimal] = None
